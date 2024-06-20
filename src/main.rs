@@ -1,3 +1,4 @@
+use chrono::Timelike;
 use anyhow::Context as _;
 use serenity::async_trait;
 use serenity::model::channel::Message;
@@ -18,8 +19,39 @@ impl EventHandler for Bot {
         }
     }
 
-    async fn ready(&self, _: Context, ready: Ready) {
+    async fn ready(&self, ctx: Context, ready: Ready) {
         info!("{} is online!", ready.user.name);
+
+        schedule_messages(ctx).await;
+    }
+}
+
+async fn schedule_messages(ctx: Context) {
+    let ctx = std::sync::Arc::new(ctx);
+
+    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+
+    loop {
+        interval.tick().await;
+
+        let now_utc = chrono::Utc::now();
+        let now_kolkata = now_utc.with_timezone(&chrono_tz::Asia::Kolkata);
+
+        // Check if it's time to send messages
+        if now_kolkata.hour() == 17 && now_kolkata.minute() == 30 {
+            send_message(&ctx, "Message at 5:30 PM").await;
+        } else if now_kolkata.hour() == 18 && now_kolkata.minute() == 0 {
+            send_message(&ctx, "Message at 6:00 PM").await;
+        } else if now_kolkata.hour() == 19 && now_kolkata.minute() == 0 {
+            send_message(&ctx, "Message at 7:00 PM").await;
+        }
+    }
+}
+
+async fn send_message(ctx: &std::sync::Arc<serenity::client::Context>, content: &str) {
+    let channel_id = serenity::model::id::ChannelId::new(1252600949164474391);
+    if let Err(e) = channel_id.say(&ctx.http, content).await {
+        error!("Error sending message: {:?}", e);
     }
 }
 
