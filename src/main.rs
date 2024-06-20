@@ -11,15 +11,15 @@ struct Bot;
 #[async_trait]
 impl EventHandler for Bot {
     async fn message(&self, ctx: Context, msg: Message) {
-        if msg.content == "!hello" {
-            if let Err(e) = msg.channel_id.say(&ctx.http, "world!").await {
-                error!("Error sending message: {:?}", e);
+        if msg.content == "$amdctl" {
+            if let Err(e) = msg.channel_id.say(&ctx.http, "amFOSS Daemon is up and running!").await {
+                error!("ERROR: Could not send message: {:?}.", e);
             }
         }
     }
 
     async fn ready(&self, _: Context, ready: Ready) {
-        info!("{} is connected!", ready.user.name);
+        info!("{} is online!", ready.user.name);
     }
 }
 
@@ -38,7 +38,7 @@ async fn serenity(
     let client = Client::builder(&token, intents)
         .event_handler(Bot)
         .await
-        .expect("Err creating client");
+        .expect("ERROR: Could not create client.");
 
     Ok(client.into())
 }
