@@ -1,5 +1,4 @@
 use chrono::Timelike;
-use reqwest::blocking::Client as HttpClient;
 use anyhow::Context as _;
 use serenity::async_trait;
 use serenity::model::channel::Message;
@@ -7,17 +6,18 @@ use serenity::model::gateway::Ready;
 use serenity::prelude::*;
 use shuttle_runtime::SecretStore;
 use tracing::{error, info};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use reqwest::Error as ReqwestError;
 
 
 #[derive(Debug, Deserialize)]
-struct Student {
+struct Member {
     active_time: String,
     last_seen: String,
     login_time: String,
     name: String,
-    rollNo: String,
+    #[serde(rename = "rollNo")]
+    roll_no: String,
 }
 
 struct Bot;
@@ -35,11 +35,11 @@ impl EventHandler for Bot {
     async fn ready(&self, ctx: Context, ready: Ready) {
         info!("{} is online!", ready.user.name);
 
-        schedule_messages(ctx).await;
+        send_presense_report(ctx).await;
     }
 }
 
-async fn schedule_messages(ctx: Context) {
+async fn send_presense_report(ctx: Context) {
     let ctx = std::sync::Arc::new(ctx);
 
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
@@ -47,91 +47,114 @@ async fn schedule_messages(ctx: Context) {
     loop {
         interval.tick().await;
 
-        let now_utc = chrono::Utc::now();
-        let now_kolkata = now_utc.with_timezone(&chrono_tz::Asia::Kolkata);
+        let utc_now = chrono::Utc::now();
+        let kolkata_now = utc_now.with_timezone(&chrono_tz::Asia::Kolkata);
 
-        // Check if it's time to send messages
-    if (now_kolkata.hour() == 17 && now_kolkata.minute() == 30)
-        || (now_kolkata.hour() == 18 && now_kolkata.minute() == 0)
-        || (now_kolkata.hour() == 19 && now_kolkata.minute() == 0) {
+        if (kolkata_now.hour() == 17 && kolkata_now.minute() == 30)
+        || (kolkata_now.hour() == 18 && kolkata_now.minute() == 0)
+        || (kolkata_now.hour() == 19 && kolkata_now.minute() == 0) {
 
-        let (absentees, late) = get_stragglers(&ctx).await;
+            let message = generate_report(kolkata_now).await;
 
-        let date_str = now_kolkata.format("%d %B %Y").to_string();
+            const THE_LAB_CHANNEL_ID: u64 = 1252600949164474391;
+            let channel_id = serenity::model::id::ChannelId::new(THE_LAB_CHANNEL_ID);
 
-        let mut message = format!(
-            "# Presense Report - {}\n",
-            date_str
-        );
-
-        if absentees.len() > 0 {
-            message.push_str(&format!("\n## Absent\n"));
-            for (index, name) in absentees.iter().enumerate() {
-                message.push_str(&format!("{}. {}\n", index + 1, name));
+            if let Err(why) = channel_id.say(&ctx.http, &message).await {
+                println!("ERROR: Could not send message: {:?}", why);
             }
-        }
-
-
-        if late.len() > 0 {
-            message.push_str(&format!("\n## Late\n"));
-            for (index, name) in late.iter().enumerate() {
-                message.push_str(&format!("{}. {}\n", index + 1, name));
-            }
-        }
-
-        let channel_id = serenity::model::id::ChannelId::new(1252600949164474391);
-        if let Err(why) = channel_id.say(&ctx.http, &message).await {
-            println!("Error sending message: {:?}", why);
-        }
         }
     }
 }
 
-async fn get_stragglers(ctx: &std::sync::Arc<serenity::client::Context>) -> (Vec<String>, Vec<String>) {
+async fn generate_report(datetime: chrono::DateTime<chrono_tz::Tz>) -> String {
+
+    let (absentees, late) = get_stragglers().await.expect("");
+
+    let date_str = datetime.format("%d %B %Y").to_string();
+
+    let mut report = format!(
+        "# Presense Report - {}\n",
+        date_str
+    );
+
+    if !absentees.is_empty() {
+        report.push_str(&format!("\n## Absent\n"));
+        for (index, name) in absentees.iter().enumerate() {
+            report.push_str(&format!("{}. {}\n", index + 1, name));
+        }
+    }
+
+    if !late.is_empty() {
+        report.push_str(&format!("\n## Late\n"));
+        for (index, name) in late.iter().enumerate() {
+            report.push_str(&format!("{}. {}\n", index + 1, name));
+        }
+    }
+
+    report
+}
+
+async fn get_stragglers() -> Result<(Vec<String>, Vec<String>), ReqwestError> {
 
     let mut absentees = Vec::new();
     let mut late = Vec::new();
 
-    if let Ok(students) = fetch_students().await {
-        let now_kolkata = chrono::Utc::now().with_timezone(&chrono_tz::Asia::Kolkata);
-
-        for student in students {
-            if student.active_time == "Absent" {
-                absentees.push(student.name.clone());
-                continue;
-            }
-
-            if let Ok(login_time) = chrono::NaiveTime::parse_from_str(&student.login_time, "%H:%M") {
-                if login_time > chrono::NaiveTime::from_hms_opt(18, 0, 0).expect("ERROR: Invalid hour, minute or second.") {
-                    late.push(student.name.clone());
+    match get_presense_data().await {
+        Ok(members) => {
+            for member in members {
+                if member.active_time == "Absent" {
+                    absentees.push(member.name.clone());
+                    continue;
                 }
-            } else {
-                error!("Error parsing login_time for student: {}", student.name);
-            }
-
-            if let Ok(last_seen_time) = chrono::NaiveTime::parse_from_str(&student.last_seen, "%H:%M") {
-                let kokl = now_kolkata.time();
-
-                let duration_since_last_seen = kokl.signed_duration_since(last_seen_time);
-                let thirty_minutes = chrono::Duration::minutes(30);
-
-                if duration_since_last_seen >= thirty_minutes {
-                    absentees.push(student.name.clone());
+                // Check if they arrived after 6:00 PM
+                if is_late(&member.login_time) {
+                    late.push(member.name.clone());
                 }
-            } else {
-                error!("Error parsing last_seen time for student: {}", student.name);
+
+                if absent_for_more_than_thirty_min(&member.last_seen) {
+                    absentees.push(member.name.clone());
+                }
             }
+            Ok((absentees, late))
+        },
+        Err(e) => {
+            error!("ERROR: Failed to retrieve presense data.");
+            return Err(e);
         }
     }
-    (absentees, late)
 }
 
-async fn fetch_students() -> Result<Vec<Student>, ReqwestError> {
+fn is_late(time: &str) -> bool {
+    if let Ok(time) = chrono::NaiveTime::parse_from_str(time, "%H:%M") {
+        let six_pm = chrono::NaiveTime::from_hms_opt(18, 0, 0).expect("Hardcoded value cannot fail.");
+        return time > six_pm;
+    } else {
+        error!("ERROR: Could not parse login_time for member.");
+        return false;
+    }
+}
 
-    let url = "https://labtrack.pythonanywhere.com/current_day";
-    let response = reqwest::get(url).await?; // Perform the async GET request
-    let students: Vec<Student> = response.json().await?; // Deserialize JSON response
-    Ok(students)
+fn absent_for_more_than_thirty_min(time: &str) -> bool {
+    if let Ok(last_seen_time) = chrono::NaiveTime::parse_from_str(time, "%H:%M") {
+        let kolkata_time_now = chrono::Utc::now().with_timezone(&chrono_tz::Asia::Kolkata).time();
+
+        let duration_since_last_seen = kolkata_time_now.signed_duration_since(last_seen_time);
+        let thirty_minutes = chrono::Duration::minutes(30);
+
+        return duration_since_last_seen > thirty_minutes;
+    } else {
+        error!("ERROR: Could not parse last_seen time for member.");
+        return false;
+    }
+}
+
+async fn get_presense_data() -> Result<Vec<Member>, ReqwestError> {
+    const URL: &str = "https://labtrack.pythonanywhere.com/current_day";
+
+    let response = reqwest::get(URL).await?;
+    let members: Vec<Member> = response.json().await?;
+
+    Ok(members)
 }
 
 #[shuttle_runtime::main]
