@@ -43,31 +43,44 @@ async fn send_presense_report(ctx: Context) {
     let ctx = std::sync::Arc::new(ctx);
 
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+    let mut sent_message: Option<Message> = None;
 
     loop {
         interval.tick().await;
 
-        let utc_now = chrono::Utc::now();
-        let kolkata_now = utc_now.with_timezone(&chrono_tz::Asia::Kolkata);
+        let kolkata_now = chrono::Utc::now().with_timezone(&chrono_tz::Asia::Kolkata);
 
-        if (kolkata_now.hour() == 17 && kolkata_now.minute() == 30)
-        || (kolkata_now.hour() == 18 && kolkata_now.minute() == 0)
-        || (kolkata_now.hour() == 19 && kolkata_now.minute() == 0) {
 
-            let message = generate_report(kolkata_now).await;
+        const THE_LAB_CHANNEL_ID: u64 = 1252600949164474391;
+        let channel_id = serenity::model::id::ChannelId::new(THE_LAB_CHANNEL_ID);
 
-            const THE_LAB_CHANNEL_ID: u64 = 1252600949164474391;
-            let channel_id = serenity::model::id::ChannelId::new(THE_LAB_CHANNEL_ID);
+        if kolkata_now.hour() == 18 && kolkata_now.minute() == 00 {
 
-            if let Err(why) = channel_id.say(&ctx.http, &message).await {
-                println!("ERROR: Could not send message: {:?}", why);
+            let initial_message = generate_report().await;
+
+            sent_message = match channel_id.say(&ctx.http, &initial_message).await {
+                Ok(msg) => Some(msg),
+                Err(why) => {
+                    println!("ERROR: Could not send message: {:?}", why);
+                    None
+                },
+            }
+        }
+
+        if kolkata_now.hour() == 19 && kolkata_now.minute() == 00 {
+            if let Some(initial_message) = &sent_message {
+                let new_message = generate_report().await;
+                
+                let edited_message = serenity::builder::EditMessage::new().content(new_message);
+                channel_id.edit_message(&ctx.http, &initial_message.id, edited_message).await.expect("");
             }
         }
     }
 }
 
-async fn generate_report(datetime: chrono::DateTime<chrono_tz::Tz>) -> String {
+async fn generate_report() -> String {
 
+    let datetime = chrono::Utc::now().with_timezone(&chrono_tz::Asia::Kolkata);
     let (absentees, late) = get_stragglers().await.expect("");
 
     let date_str = datetime.format("%d %B %Y").to_string();
@@ -106,7 +119,7 @@ async fn get_stragglers() -> Result<(Vec<String>, Vec<String>), ReqwestError> {
                     absentees.push(member.name.clone());
                     continue;
                 }
-                // Check if they arrived after 6:00 PM
+                // Check if they arrived after 5:45 PM
                 if is_late(&member.login_time) {
                     late.push(member.name.clone());
                 }
@@ -126,8 +139,8 @@ async fn get_stragglers() -> Result<(Vec<String>, Vec<String>), ReqwestError> {
 
 fn is_late(time: &str) -> bool {
     if let Ok(time) = chrono::NaiveTime::parse_from_str(time, "%H:%M") {
-        let six_pm = chrono::NaiveTime::from_hms_opt(18, 0, 0).expect("Hardcoded value cannot fail.");
-        return time > six_pm;
+        let five_forty_five_pm = chrono::NaiveTime::from_hms_opt(17, 45, 0).expect("Hardcoded value cannot fail.");
+        return time > five_forty_five_pm;
     } else {
         error!("ERROR: Could not parse login_time for member.");
         return false;
