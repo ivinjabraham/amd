@@ -29,7 +29,7 @@ impl EventHandler for Bot {
             if let Err(e) = msg.channel_id.say(&ctx.http, "amFOSS Daemon is up and running!").await {
                 error!("ERROR: Could not send message: {:?}.", e);
             }
-        }
+        } 
     }
 
     async fn ready(&self, ctx: Context, ready: Ready) {
@@ -51,7 +51,7 @@ async fn send_presense_report(ctx: Context) {
         let kolkata_now = chrono::Utc::now().with_timezone(&chrono_tz::Asia::Kolkata);
 
 
-        const THE_LAB_CHANNEL_ID: u64 = 1252600949164474391;
+        const THE_LAB_CHANNEL_ID: u64 = 1208438766893670451;
         let channel_id = serenity::model::id::ChannelId::new(THE_LAB_CHANNEL_ID);
 
         if kolkata_now.hour() == 18 && kolkata_now.minute() == 00 {
