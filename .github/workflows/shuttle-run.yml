@@ -1,0 +1,17 @@
+name: shuttle-deploy
+on: 
+  pull_request:
+    branches: [ "main", "develop" ]
+
+jobs:
+  deploy-project:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run shuttle project locally. 
+        uses: denytwice/shuttle-deploy@v1.0
+        with:
+          secrets: |
+            DISCORD_TOKEN = '${{ secrets.DISCORD_TOKEN }}'

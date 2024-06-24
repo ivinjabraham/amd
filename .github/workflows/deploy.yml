@@ -16,5 +16,3 @@ jobs:
           name: "amd"
           secrets: |
             DISCORD_TOKEN = '${{ secrets.DISCORD_TOKEN }}'
-
-
