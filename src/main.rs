@@ -4,14 +4,12 @@ use chrono::NaiveTime;
 use chrono_tz::Asia::Kolkata;
 
 use tracing::{error, info};
-use anyhow::Context as _;
 
 use serenity::prelude::*;
 use serenity::model::{
     channel::Message, 
     gateway::Ready};
 
-use shuttle_runtime::SecretStore;
 use reqwest::Error as ReqwestError;
 use serde::Deserialize;
 
@@ -71,6 +69,7 @@ async fn send_presense_present_list(ctx: Context) {
             list.push_str(&format!("{}. {}\n", index + 1, name));
         }
     }
+
     const THE_LAB_CHANNEL_ID: u64 = 1252600949164474391;
     let channel_id = serenity::model::id::ChannelId::new(THE_LAB_CHANNEL_ID);
     channel_id.say(&ctx.http, list).await.expect("");
@@ -208,12 +207,12 @@ async fn get_presense_data() -> Result<Vec<Member>, ReqwestError> {
 
 #[shuttle_runtime::main]
 async fn serenity(
-    #[shuttle_runtime::Secrets] secrets: SecretStore,
+    #[shuttle_runtime::Secrets] secrets: shuttle_runtime::SecretStore,
 ) -> shuttle_serenity::ShuttleSerenity {
     // Get the discord token set in `Secrets.toml`
     let token = secrets
         .get("DISCORD_TOKEN")
-        .context("'DISCORD_TOKEN' was not found")?;
+        .expect("'DISCORD_TOKEN' was not found");
 
     // Set gateway intents, which decides what events the bot will be notified about
     let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
