@@ -16,9 +16,6 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 use anyhow::Context as _;
-use poise::serenity_prelude::{ClientBuilder, GatewayIntents};
-use shuttle_runtime::SecretStore;
-use shuttle_serenity::ShuttleSerenity;
 
 struct Data {}
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -31,7 +28,9 @@ async fn amdctl(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 #[shuttle_runtime::main]
-async fn main(#[shuttle_runtime::Secrets] secret_store: SecretStore) -> ShuttleSerenity {
+async fn main(
+    #[shuttle_runtime::Secrets] secret_store: shuttle_runtime::SecretStore,
+) -> shuttle_serenity::ShuttleSerenity {
     let discord_token = secret_store
         .get("DISCORD_TOKEN")
         .context("'DISCORD_TOKEN' was not found")?;
@@ -53,10 +52,14 @@ async fn main(#[shuttle_runtime::Secrets] secret_store: SecretStore) -> ShuttleS
         })
         .build();
 
-    let client = ClientBuilder::new(discord_token, GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT)
-        .framework(framework)
-        .await
-        .map_err(shuttle_runtime::CustomError::new)?;
+    let client = serenity::client::ClientBuilder::new(
+        discord_token,
+        serenity::model::gateway::GatewayIntents::non_privileged()
+            | serenity::model::gateway::GatewayIntents::MESSAGE_CONTENT,
+    )
+    .framework(framework)
+    .await
+    .map_err(shuttle_runtime::CustomError::new)?;
 
     Ok(client.into())
 }
