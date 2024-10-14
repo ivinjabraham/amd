@@ -15,17 +15,11 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
+mod commands;
+
 use anyhow::Context as _;
 
 struct Data {}
-type Error = Box<dyn std::error::Error + Send + Sync>;
-type Context<'a> = poise::Context<'a, Data, Error>;
-
-#[poise::command(prefix_command)]
-async fn amdctl(ctx: Context<'_>) -> Result<(), Error> {
-    ctx.say("amD is up and running.").await?;
-    Ok(())
-}
 
 #[shuttle_runtime::main]
 async fn main(
@@ -37,7 +31,7 @@ async fn main(
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![amdctl()],
+            commands: commands::get_commands(),
             prefix_options: poise::PrefixFrameworkOptions {
                 prefix: Option::Some(String::from("$")),
                 ..Default::default()
