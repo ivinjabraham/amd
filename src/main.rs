@@ -18,8 +18,28 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 mod commands;
 
 use anyhow::Context as _;
+use std::collections::HashMap;
 
-struct Data {}
+use poise::{Context as PoiseContext, Framework, FrameworkOptions, PrefixFrameworkOptions};
+use serenity::{
+    client::Context as SerenityContext,
+    client::FullEvent,
+    model::{
+        channel::ReactionType,
+        gateway::GatewayIntents,
+        id::{MessageId, RoleId},
+    },
+};
+
+type Context<'a> = PoiseContext<'a, Data, Error>;
+type Error = Box<dyn std::error::Error + Send + Sync>;
+
+struct Data {
+    reaction_roles: HashMap<MessageId, (ReactionType, RoleId)>,
+}
+
+const ARCHIVE_MESSAGE_ID: u64 = 1295815208689733703;
+const ARCHIVE_ROLE_ID: u64 = 1208457364274028574;
 
 #[shuttle_runtime::main]
 async fn main(
@@ -29,11 +49,14 @@ async fn main(
         .get("DISCORD_TOKEN")
         .context("'DISCORD_TOKEN' was not found")?;
 
-    let framework = poise::Framework::builder()
-        .options(poise::FrameworkOptions {
+    let framework = Framework::builder()
+        .options(FrameworkOptions {
             commands: commands::get_commands(),
-            prefix_options: poise::PrefixFrameworkOptions {
-                prefix: Option::Some(String::from("$")),
+            event_handler: |ctx, event, framework, data| {
+                Box::pin(event_handler(ctx, event, framework, data))
+            },
+            prefix_options: PrefixFrameworkOptions {
+                prefix: Some(String::from("$")),
                 ..Default::default()
             },
             ..Default::default()
@@ -41,19 +64,77 @@ async fn main(
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(Data {})
+
+                let mut data = Data {
+                    reaction_roles: HashMap::new(),
+                };
+
+                let message_id = MessageId::new(ARCHIVE_MESSAGE_ID);
+                let role_id = RoleId::new(ARCHIVE_ROLE_ID);
+
+                data.reaction_roles.insert(
+                    message_id,
+                    (ReactionType::Unicode("📁".to_string()), role_id),
+                );
+
+                Ok(data)
             })
         })
         .build();
 
     let client = serenity::client::ClientBuilder::new(
         discord_token,
-        serenity::model::gateway::GatewayIntents::non_privileged()
-            | serenity::model::gateway::GatewayIntents::MESSAGE_CONTENT,
+        GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT,
     )
     .framework(framework)
     .await
     .map_err(shuttle_runtime::CustomError::new)?;
 
     Ok(client.into())
+}
+
+async fn event_handler(
+    ctx: &SerenityContext,
+    event: &FullEvent,
+    _framework: poise::FrameworkContext<'_, Data, Error>,
+    data: &Data,
+) -> Result<(), Error> {
+    match event {
+        FullEvent::ReactionAdd { add_reaction } => {
+            if let Some((expected_reaction, role_id)) =
+                data.reaction_roles.get(&add_reaction.message_id)
+            {
+                if &add_reaction.emoji == expected_reaction {
+                    if let Some(guild_id) = add_reaction.guild_id {
+                        // TODO: Use try_join to await concurrently?
+                        if let Ok(member) =
+                            guild_id.member(ctx, add_reaction.user_id.unwrap()).await
+                        {
+                            let _ = member.add_role(&ctx.http, *role_id).await;
+                        }
+                    }
+                }
+            }
+        }
+
+        FullEvent::ReactionRemove { removed_reaction } => {
+            if let Some((expected_reaction, role_id)) =
+                data.reaction_roles.get(&removed_reaction.message_id)
+            {
+                if &removed_reaction.emoji == expected_reaction {
+                    if let Some(guild_id) = removed_reaction.guild_id {
+                        if let Ok(member) = guild_id
+                            .member(ctx, removed_reaction.user_id.unwrap())
+                            .await
+                        {
+                            let _ = member.remove_role(&ctx.http, *role_id).await;
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+
+    Ok(())
 }

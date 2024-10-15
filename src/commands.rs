@@ -16,9 +16,8 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 use crate::Data;
-
-type Context<'a> = poise::Context<'a, Data, Error>;
-type Error = Box<dyn std::error::Error + Send + Sync>;
+use crate::Error;
+use crate::Context;
 
 #[poise::command(prefix_command)]
 async fn amdctl(ctx: Context<'_>) -> Result<(), Error> {
@@ -27,7 +26,5 @@ async fn amdctl(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
-    vec![
-        amdctl(),
-    ]
+    vec![amdctl()]
 }
