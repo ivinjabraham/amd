@@ -38,7 +38,7 @@ struct Data {
     reaction_roles: HashMap<MessageId, (ReactionType, RoleId)>,
 }
 
-const ARCHIVE_MESSAGE_ID: u64 = 1295815208689733703;
+const ARCHIVE_MESSAGE_ID: u64 = 1295821555586175083;
 const ARCHIVE_ROLE_ID: u64 = 1208457364274028574;
 
 #[shuttle_runtime::main]
@@ -110,7 +110,9 @@ async fn event_handler(
                         if let Ok(member) =
                             guild_id.member(ctx, add_reaction.user_id.unwrap()).await
                         {
-                            let _ = member.add_role(&ctx.http, *role_id).await;
+                            if let Err(e) = member.add_role(&ctx.http, *role_id).await {
+                                eprintln!("Error: {:?}", e);
+                            }
                         }
                     }
                 }
@@ -124,10 +126,11 @@ async fn event_handler(
                 if &removed_reaction.emoji == expected_reaction {
                     if let Some(guild_id) = removed_reaction.guild_id {
                         if let Ok(member) = guild_id
-                            .member(ctx, removed_reaction.user_id.unwrap())
-                            .await
+                            .member(ctx, removed_reaction.user_id.unwrap()).await
                         {
-                            let _ = member.remove_role(&ctx.http, *role_id).await;
+                            if let Err(e) = member.remove_role(&ctx.http, *role_id).await {
+                                eprintln!("Error: {:?}", e);
+                            }
                         }
                     }
                 }
