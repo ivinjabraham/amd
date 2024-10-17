@@ -69,18 +69,7 @@ async fn main(
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
 
-                let mut data = Data {
-                    reaction_roles: HashMap::new(),
-                };
-
-                let message_id = MessageId::new(ARCHIVE_MESSAGE_ID);
-                let role_id = RoleId::new(ARCHIVE_ROLE_ID);
-
-                data.reaction_roles.insert(
-                    message_id,
-                    (ReactionType::Unicode("📁".to_string()), role_id),
-                );
-
+                let data = initialize_data();
                 crate::scheduler::run_scheduler(ctx.clone()).await;
 
                 Ok(data)
@@ -97,6 +86,22 @@ async fn main(
     .map_err(shuttle_runtime::CustomError::new)?;
 
     Ok(client.into())
+}
+
+fn initialize_data() -> Data {
+    let mut data = Data {
+        reaction_roles: HashMap::new(),
+    };
+
+    let message_id = MessageId::new(ARCHIVE_MESSAGE_ID);
+    let role_id = RoleId::new(ARCHIVE_ROLE_ID);
+
+    data.reaction_roles.insert(
+        message_id,
+        (ReactionType::Unicode("📁".to_string()), role_id),
+    );
+
+    data
 }
 
 async fn event_handler(
