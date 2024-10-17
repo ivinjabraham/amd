@@ -16,6 +16,10 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 mod commands;
+mod graphql;
+mod scheduler;
+mod tasks;
+mod utils;
 
 use anyhow::Context as _;
 use std::collections::HashMap;
@@ -77,6 +81,8 @@ async fn main(
                     (ReactionType::Unicode("📁".to_string()), role_id),
                 );
 
+                crate::scheduler::run_scheduler(ctx.clone()).await;
+
                 Ok(data)
             })
         })
@@ -126,7 +132,8 @@ async fn event_handler(
                 if &removed_reaction.emoji == expected_reaction {
                     if let Some(guild_id) = removed_reaction.guild_id {
                         if let Ok(member) = guild_id
-                            .member(ctx, removed_reaction.user_id.unwrap()).await
+                            .member(ctx, removed_reaction.user_id.unwrap())
+                            .await
                         {
                             if let Err(e) = member.remove_role(&ctx.http, *role_id).await {
                                 eprintln!("Error: {:?}", e);
