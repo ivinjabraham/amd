@@ -36,7 +36,7 @@ const STATUS_UPDATE_CHANNEL_ID: u64 = 764575524127244318;
 #[async_trait]
 pub trait Task: Send + Sync {
     fn name(&self) -> &'static str;
-    fn interval(&self) -> Duration;
+    fn run_in(&self) -> Duration;
     async fn run(&self, ctx: Context);
 }
 
@@ -48,7 +48,7 @@ impl Task for StatusUpdateCheck {
         "StatusUpdateCheck"
     }
 
-    fn interval(&self) -> Duration {
+    fn run_in(&self) -> Duration {
         time_until(5, 0)
     }
 
@@ -75,10 +75,11 @@ impl Task for StatusUpdateCheck {
                     let filtered_messages: Vec<Message> = messages
                         .into_iter()
                         .filter(|msg| {
+                            let msg_content = msg.content.to_lowercase();
                             msg.timestamp >= yesterday_five_am.into()
                                 && msg.timestamp < today_five_am.into()
-                                && msg.content.to_lowercase().contains("namah shivaya")
-                                && msg.content.to_lowercase().contains("regards")
+                                && msg_content.contains("namah shivaya")
+                                && msg_content.contains("regards")
                         })
                         .collect();
 

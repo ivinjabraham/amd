@@ -30,7 +30,7 @@ pub async fn run_scheduler(ctx: SerenityContext) {
 
 async fn schedule_task(ctx: SerenityContext, task: Box<dyn Task>) {
     loop {
-        let next_run_in = task.interval();
+        let next_run_in = task.run_in();
         tokio::time::sleep(next_run_in).await;
 
         task.run(ctx.clone()).await;
