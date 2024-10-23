@@ -26,24 +26,28 @@ use std::collections::HashMap;
 
 use poise::{Context as PoiseContext, Framework, FrameworkOptions, PrefixFrameworkOptions};
 use serenity::{
-    client::Context as SerenityContext,
-    client::FullEvent,
-    model::{
+        client::{Context as SerenityContext, FullEvent}, model::{
         channel::ReactionType,
         gateway::GatewayIntents,
         id::{MessageId, RoleId},
-    },
+    }
 };
 
 type Context<'a> = PoiseContext<'a, Data, Error>;
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
 struct Data {
-    reaction_roles: HashMap<MessageId, (ReactionType, RoleId)>,
+    reaction_roles: HashMap<ReactionType, RoleId>,
 }
 
-const ARCHIVE_MESSAGE_ID: u64 = 1295821555586175083;
+const ARCHIVE_MESSAGE_ID: u64 = 1298636092886749294;
 const ARCHIVE_ROLE_ID: u64 = 1208457364274028574;
+const MOBILE_ROLE_ID: u64 = 1298553701094395936;
+const SYSTEMS_ROLE_ID: u64 = 1298553801191718944;
+const AI_ROLE_ID: u64 = 1298553753523453952;
+const RESEARCH_ROLE_ID: u64 = 1298553855474270219;
+const DEVOPS_ROLE_ID: u64 = 1298553883169132554;
+const WEB_ROLE_ID: u64 = 1298553910167994428;
 
 #[shuttle_runtime::main]
 async fn main(
@@ -93,13 +97,26 @@ fn initialize_data() -> Data {
         reaction_roles: HashMap::new(),
     };
 
-    let message_id = MessageId::new(ARCHIVE_MESSAGE_ID);
-    let role_id = RoleId::new(ARCHIVE_ROLE_ID);
+    let archive_role_id = RoleId::new(ARCHIVE_ROLE_ID);
+    let mobile_role_id = RoleId::new(MOBILE_ROLE_ID);
+    let systems_role_id = RoleId::new(SYSTEMS_ROLE_ID);
+    let ai_role_id = RoleId::new(AI_ROLE_ID);
+    let research_role_id = RoleId::new(RESEARCH_ROLE_ID);
+    let devops_role_id = RoleId::new(DEVOPS_ROLE_ID);
+    let web_role_id = RoleId::new(WEB_ROLE_ID);
 
-    data.reaction_roles.insert(
-        message_id,
-        (ReactionType::Unicode("📁".to_string()), role_id),
-    );
+
+    let message_roles = [
+        (ReactionType::Unicode("📁".to_string()), archive_role_id),
+        (ReactionType::Unicode("📱".to_string()), mobile_role_id),
+        (ReactionType::Unicode("⚙️".to_string()), systems_role_id),
+        (ReactionType::Unicode("🤖".to_string()), ai_role_id),
+        (ReactionType::Unicode("📜".to_string()), research_role_id),
+        (ReactionType::Unicode("🚀".to_string()), devops_role_id),
+        (ReactionType::Unicode("🌐".to_string()), web_role_id),
+   ];
+
+    data.reaction_roles.extend::<HashMap<ReactionType, RoleId>>(message_roles.into());
 
     data
 }
@@ -112,38 +129,32 @@ async fn event_handler(
 ) -> Result<(), Error> {
     match event {
         FullEvent::ReactionAdd { add_reaction } => {
-            if let Some((expected_reaction, role_id)) =
-                data.reaction_roles.get(&add_reaction.message_id)
-            {
-                if &add_reaction.emoji == expected_reaction {
+            let message_id = MessageId::new(ARCHIVE_MESSAGE_ID);
+            if add_reaction.message_id == message_id && data.reaction_roles.contains_key(&add_reaction.emoji) {
                     if let Some(guild_id) = add_reaction.guild_id {
                         // TODO: Use try_join to await concurrently?
                         if let Ok(member) =
                             guild_id.member(ctx, add_reaction.user_id.unwrap()).await
                         {
-                            if let Err(e) = member.add_role(&ctx.http, *role_id).await {
+                            if let Err(e) = member.add_role(&ctx.http, data.reaction_roles.get(&add_reaction.emoji).expect("Hard coded value verified earlier.")).await {
                                 eprintln!("Error: {:?}", e);
                             }
                         }
                     }
                 }
-            }
         }
 
         FullEvent::ReactionRemove { removed_reaction } => {
-            if let Some((expected_reaction, role_id)) =
-                data.reaction_roles.get(&removed_reaction.message_id)
-            {
-                if &removed_reaction.emoji == expected_reaction {
+                let message_id = MessageId::new(ARCHIVE_MESSAGE_ID);
+                if message_id == removed_reaction.message_id && data.reaction_roles.contains_key(&removed_reaction.emoji) {
                     if let Some(guild_id) = removed_reaction.guild_id {
                         if let Ok(member) = guild_id
                             .member(ctx, removed_reaction.user_id.unwrap())
                             .await
                         {
-                            if let Err(e) = member.remove_role(&ctx.http, *role_id).await {
+                            if let Err(e) = member.remove_role(&ctx.http, *data.reaction_roles.get(&removed_reaction.emoji).expect("Hard coded value verified earlier")).await {
                                 eprintln!("Error: {:?}", e);
                             }
-                        }
                     }
                 }
             }
