@@ -15,14 +15,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-use crate::{Context, Data, Error};
+pub mod status_update;
+pub mod tasks;
 
-#[poise::command(prefix_command)]
-async fn amdctl(ctx: Context<'_>) -> Result<(), Error> {
-    ctx.say("amD is up and running.").await?;
-    Ok(())
-}
-
-pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
-    vec![amdctl()]
-}
+pub use self::tasks::{get_tasks, Task};
