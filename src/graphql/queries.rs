@@ -17,6 +17,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 use serde_json::Value;
 
+use super::models::Member;
+
 const REQUEST_URL: &str = "https://root.shuttleapp.rs/";
 
 pub async fn fetch_members() -> Result<Vec<String>, reqwest::Error> {
@@ -24,7 +26,9 @@ pub async fn fetch_members() -> Result<Vec<String>, reqwest::Error> {
     let query = r#"
     query {
         getMember {
-            name
+            name,
+            groupId,
+            discordId
         }
     }"#;
 
@@ -40,7 +44,7 @@ pub async fn fetch_members() -> Result<Vec<String>, reqwest::Error> {
         .as_array()
         .unwrap()
         .iter()
-        .map(|member| member["name"].as_str().unwrap().to_string())
+        .map(Member)
         .collect();
 
     Ok(member_names)

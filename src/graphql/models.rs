@@ -15,24 +15,29 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-use crate::scheduler::tasks::{get_tasks, Task};
-use serenity::client::Context as SerenityContext;
+use serde::Deserialize;
+use std::borrow::Cow;
 
-use tokio::spawn;
-
-pub async fn run_scheduler(ctx: SerenityContext) {
-    let tasks = get_tasks();
-
-    for task in tasks {
-        spawn(schedule_task(ctx.clone(), task));
-    }
+#[derive(Deserialize)]
+pub struct Member<'a> {
+    id: Option<i32>,
+    roll_num: Option<Cow<'a, str>>,
+    name: Option<Cow<'a, str>>,
+    hostel: &'a str,
+    email: &'a str,
+    sex: &'a str,
+    year: i32,
+    mac_addr: &'a str,
+    discord_id: &'a str,
+    group_id: i32,
 }
 
-async fn schedule_task(ctx: SerenityContext, task: Box<dyn Task>) {
-    loop {
-        let next_run_in = task.run_in();
-        tokio::time::sleep(next_run_in).await;
+#[derive(Deserialize)]
+struct Data<'a> {
+    getMember: Vec<Member<'a>>,
+}
 
-        task.run(ctx.clone()).await;
-    }
+#[derive(Deserialize)]
+struct Root<'a> {
+    data: Data<'a>,
 }
