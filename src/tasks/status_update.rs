@@ -18,11 +18,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 use serenity::all::{ChannelId, Context, Message};
 
 use crate::{
+    graphql::queries::fetch_members,
     ids::{
         GROUP_FOUR_CHANNEL_ID, GROUP_ONE_CHANNEL_ID, GROUP_THREE_CHANNEL_ID, GROUP_TWO_CHANNEL_ID,
         STATUS_UPDATE_CHANNEL_ID,
     },
-    utils::{graphql::fetch_members, time::get_five_am_timestamp},
+    utils::time::get_five_am_timestamp,
 };
 
 pub async fn check_status_updates(ctx: Context) {
