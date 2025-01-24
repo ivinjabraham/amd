@@ -52,6 +52,7 @@ const WEB_ROLE_ID: u64 = 1298553910167994428;
 #[tokio::main]
 async fn main(
 ) -> Result<(), Error>{
+    let _ = dotenv::dotenv();
     let discord_token = std::env::var("DISCORD_TOKEN").context("'DISCORD_TOKEN' was not found")?;
 
     let framework = Framework::builder()
