@@ -61,7 +61,6 @@ pub fn initialize_data() -> Data {
         reaction_roles: HashMap::new(),
     };
 
-    // Define the emoji-role pairs
     let roles = [
         (
             ReactionType::Unicode("📁".to_string()),
@@ -100,18 +99,10 @@ pub fn initialize_data() -> Data {
     data
 }
 
-/// Sets up the bot using a [`poise::Framework`], which handles most of the
-/// configuration including the command prefix, the event handler, the available commands,
-/// managing [`Data`] and running the [`scheduler`].
-#[shuttle_runtime::main]
+#[tokio::main]
 async fn main(
-    #[shuttle_runtime::Secrets] secret_store: shuttle_runtime::SecretStore,
-) -> shuttle_serenity::ShuttleSerenity {
-    // Uses Shuttle's environment variable storage solution SecretStore
-    // to access the token
-    let discord_token = secret_store
-        .get("DISCORD_TOKEN")
-        .context("'DISCORD_TOKEN' was not found")?;
+) -> Result<(), Error>{
+    let discord_token = std::env::var("DISCORD_TOKEN").context("'DISCORD_TOKEN' was not found")?;
 
     let framework = Framework::builder()
         .options(FrameworkOptions {
@@ -142,15 +133,17 @@ async fn main(
         })
         .build();
 
-    let client = serenity::client::ClientBuilder::new(
+    let mut client = serenity::client::ClientBuilder::new(
         discord_token,
         GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT,
     )
     .framework(framework)
     .await
-    .map_err(shuttle_runtime::CustomError::new)?;
+    .context("Failed to create the Serenity client")?;
 
-    Ok(client.into())
+    client.start().await.context("Error running the bot")?;
+
+    Ok(())
 }
 /// Handles various events from Discord, such as reactions.
 ///
