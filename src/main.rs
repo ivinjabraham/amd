@@ -145,6 +145,7 @@ async fn main(
 
     Ok(())
 }
+
 /// Handles various events from Discord, such as reactions.
 ///
 /// Current functionality includes:
