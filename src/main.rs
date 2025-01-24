@@ -61,7 +61,6 @@ pub fn initialize_data() -> Data {
         reaction_roles: HashMap::new(),
     };
 
-    // Define the emoji-role pairs
     let roles = [
         (
             ReactionType::Unicode("📁".to_string()),
