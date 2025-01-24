@@ -49,13 +49,10 @@ const RESEARCH_ROLE_ID: u64 = 1298553855474270219;
 const DEVOPS_ROLE_ID: u64 = 1298553883169132554;
 const WEB_ROLE_ID: u64 = 1298553910167994428;
 
-#[shuttle_runtime::main]
+#[tokio::main]
 async fn main(
-    #[shuttle_runtime::Secrets] secret_store: shuttle_runtime::SecretStore,
-) -> shuttle_serenity::ShuttleSerenity {
-    let discord_token = secret_store
-        .get("DISCORD_TOKEN")
-        .context("'DISCORD_TOKEN' was not found")?;
+) -> Result<(), Error>{
+    let discord_token = std::env::var("DISCORD_TOKEN").context("'DISCORD_TOKEN' was not found")?;
 
     let framework = Framework::builder()
         .options(FrameworkOptions {
@@ -81,15 +78,17 @@ async fn main(
         })
         .build();
 
-    let client = serenity::client::ClientBuilder::new(
+    let mut client = serenity::client::ClientBuilder::new(
         discord_token,
         GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT,
     )
     .framework(framework)
     .await
-    .map_err(shuttle_runtime::CustomError::new)?;
+    .context("Failed to create the Serenity client")?;
 
-    Ok(client.into())
+    client.start().await.context("Error running the bot")?;
+
+    Ok(())
 }
 
 fn initialize_data() -> Data {
