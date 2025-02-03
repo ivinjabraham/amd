@@ -102,7 +102,7 @@ pub fn initialize_data() -> Data {
 #[tokio::main]
 async fn main(
 ) -> Result<(), Error>{
-    let _ = dotenv::dotenv();
+    dotenv::dotenv().ok();
     let discord_token = std::env::var("DISCORD_TOKEN").context("'DISCORD_TOKEN' was not found")?;
 
     let framework = Framework::builder()
