@@ -19,6 +19,7 @@ use serenity::all::{
     self, ChannelId, Context, CreateEmbed, CreateEmbedAuthor, CreateMessage, Embed,
     Member as DiscordMember, Message, MessageId, Timestamp,
 };
+use anyhow::Result;
 
 use crate::{
     graphql::{queries::{fetch_members, increment_streak, reset_streak}, models:: Member},
@@ -33,12 +34,12 @@ use std::{collections::HashMap, io::Write, str::FromStr};
 
 use chrono_tz::Asia;
 
-pub async fn check_status_updates(ctx: Context) {
+pub async fn check_status_updates(ctx: Context) -> Result<()> {
     let mut members = match fetch_members().await {
         Ok(members) => members,
         Err(e) => {
             eprintln!("Failed to fetch members from Root. {}", e);
-            return;
+            return Err(e);
         }
     };
 
@@ -60,6 +61,8 @@ pub async fn check_status_updates(ctx: Context) {
         Err(e) => eprintln!("{}", e),
         _ => (),
     };
+
+    Ok(())
 }
 
 async fn send_and_save_limiting_messages(channel_ids: &Vec<ChannelId>, ctx: &Context) {

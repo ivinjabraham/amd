@@ -16,10 +16,10 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 use crate::graphql::models::{Member, Streak};
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 
-pub async fn fetch_members() -> Result<Vec<Member>, anyhow::Error> {
-    let request_url = std::env::var("ROOT_URL").expect("ROOT_URL not found");
+pub async fn fetch_members() -> anyhow::Result<Vec<Member>> {
+    let request_url = std::env::var("ROOT_URL").context("ROOT_URL not found in ENV")?;
 
     let client = reqwest::Client::new();
     let query = r#"
@@ -43,6 +43,10 @@ pub async fn fetch_members() -> Result<Vec<Member>, anyhow::Error> {
         .await
         .context("Failed to successfully post request")?;
 
+    if !response.status().is_success() {
+        return Err(anyhow!("Server responded with an error: {:?}", response.status()));
+    }
+
     let response_json: serde_json::Value = response
         .json()
         .await
@@ -52,7 +56,7 @@ pub async fn fetch_members() -> Result<Vec<Member>, anyhow::Error> {
         .get("data")
         .and_then(|data| data.get("members"))
         .and_then(|members| members.as_array())
-        .ok_or_else(|| anyhow::anyhow!("Malformed response: 'members' field missing or invalid"))?;
+        .ok_or_else(|| anyhow::anyhow!("Malformed response: Could not access Members from {}", response_json))?;
 
     let members: Vec<Member> = serde_json::from_value(serde_json::Value::Array(members.clone()))
         .context("Failed to parse 'members' into Vec<Member>")?;
@@ -61,7 +65,7 @@ pub async fn fetch_members() -> Result<Vec<Member>, anyhow::Error> {
 }
 
 pub async fn increment_streak(member: &mut Member) -> anyhow::Result<()> {
-    let request_url = std::env::var("ROOT_URL").context("ROOT_URL was not found")?;
+    let request_url = std::env::var("ROOT_URL").context("ROOT_URL was not found in ENV")?;
 
     let client = reqwest::Client::new();
     let mutation = format!(
@@ -73,12 +77,17 @@ pub async fn increment_streak(member: &mut Member) -> anyhow::Result<()> {
         }}"#,
         member.member_id
     );
+
     let response = client
         .post(request_url)
         .json(&serde_json::json!({"query": mutation}))
         .send()
         .await
-        .context("Root Request failed")?;
+        .context("Failed to succesfully post query to Root")?;
+
+    if !response.status().is_success() {
+        return Err(anyhow!("Server responded with an error: {:?}", response.status()));
+    }
 
     // Handle the streak vector
     if member.streak.is_empty() {
@@ -101,7 +110,7 @@ pub async fn increment_streak(member: &mut Member) -> anyhow::Result<()> {
 }
 
 pub async fn reset_streak(member: &mut Member) -> anyhow::Result<()> {
-    let request_url = std::env::var("ROOT_URL").context("ROOT_URL was not found")?;
+    let request_url = std::env::var("ROOT_URL").context("ROOT_URL was not found in the ENV")?;
 
     let client = reqwest::Client::new();
     let mutation = format!(
@@ -120,34 +129,41 @@ pub async fn reset_streak(member: &mut Member) -> anyhow::Result<()> {
         .json(&serde_json::json!({ "query": mutation }))
         .send()
         .await
-        .context("Root Request failed")?;
+        .context("Failed to succesfully post query to Root")?;
+
+    if !response.status().is_success() {
+        return Err(anyhow!("Server responded with an error: {:?}", response.status()));
+    }
 
     let response_json: serde_json::Value = response
         .json()
         .await
         .context("Failed to parse response JSON")?;
+
     if let Some(data) = response_json
         .get("data")
         .and_then(|data| data.get("resetStreak"))
     {
-        let current_streak = data.get("currentStreak").and_then(|v| v.as_i64()).unwrap();
-
-        let max_streak = data.get("maxStreak").and_then(|v| v.as_i64()).unwrap();
+        let current_streak = data.get("currentStreak").and_then(|v| v.as_i64()).ok_or_else(|| anyhow!("current_streak was parsed as None"))? as i32;
+        let max_streak = data.get("maxStreak").and_then(|v| v.as_i64()).ok_or_else(|| anyhow!("max_streak was parsed as None"))? as i32;
 
         // Update the member's streak vector
         if member.streak.is_empty() {
             // If the streak vector is empty, initialize it with the returned values
             member.streak.push(Streak {
-                current_streak: current_streak as i32,
-                max_streak: max_streak as i32,
+                current_streak,
+                max_streak,
             });
         } else {
             // Otherwise, update the first streak entry
             for streak in &mut member.streak {
-                streak.current_streak = current_streak as i32;
-                streak.max_streak = max_streak as i32;
+                streak.current_streak = current_streak;
+                streak.max_streak = max_streak;
             }
         }
+    } else {
+        return Err(anyhow!("Failed to access data from {}", response_json));
     }
+
     Ok(())
 }

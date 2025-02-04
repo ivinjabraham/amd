@@ -97,7 +97,7 @@ pub fn initialize_data() -> Data {
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     dotenv::dotenv().ok();
-    let discord_token = std::env::var("DISCORD_TOKEN").context("'DISCORD_TOKEN' was not found")?;
+    let discord_token = std::env::var("DISCORD_TOKEN").context("DISCORD_TOKEN was not found in the ENV")?;
 
     let framework = Framework::builder()
         .options(FrameworkOptions {
@@ -131,7 +131,7 @@ async fn main() -> Result<(), Error> {
     .await
     .context("Failed to create the Serenity client")?;
 
-    client.start().await.context("Error running the bot")?;
+    client.start().await.context("Failed to start the Serenity client")?;
 
     Ok(())
 }
@@ -150,18 +150,20 @@ async fn event_handler(
                 // if the reaction was added to the [`ROLES_MESSAGE_ID`] which *should* point to a
                 // message in the server.
                 if let Some(guild_id) = add_reaction.guild_id {
-                    if let Ok(member) = guild_id.member(ctx, add_reaction.user_id.unwrap()).await {
-                        if let Err(e) = member
-                            .add_role(
-                                &ctx.http,
-                                data.reaction_roles
+                    if let Some(user_id) = add_reaction.user_id {
+                        if let Ok(member) = guild_id.member(ctx, user_id).await {
+                            if let Err(e) = member
+                                .add_role(
+                                    &ctx.http,
+                                    data.reaction_roles
                                     .get(&add_reaction.emoji)
                                     .expect("Hard coded value verified earlier."),
-                            )
-                            .await
-                        {
-                            // TODO: Replace with tracing
-                            eprintln!("Error adding role: {:?}", e);
+                                )
+                                    .await
+                            {
+                                // TODO: Replace with tracing
+                                eprintln!("Error adding role: {:?}", e);
+                            }
                         }
                     }
                 }
@@ -174,21 +176,22 @@ async fn event_handler(
                 // if the reaction was added to the [`ROLES_MESSAGE_ID`] which *should* point to a
                 // message in the server.
                 if let Some(guild_id) = removed_reaction.guild_id {
-                    if let Ok(member) = guild_id
-                        .member(ctx, removed_reaction.user_id.unwrap())
-                        .await
-                    {
-                        if let Err(e) = member
-                            .remove_role(
-                                &ctx.http,
-                                *data
-                                    .reaction_roles
+                    if let Some(user_id) = removed_reaction.user_id {
+                        if let Ok(member) = guild_id
+                            .member(ctx, user_id)
+                                .await
+                        {
+                            if let Err(e) = member
+                                .remove_role(
+                                    &ctx.http,
+                                    *data.reaction_roles
                                     .get(&removed_reaction.emoji)
                                     .expect("Hard coded value verified earlier."),
-                            )
-                            .await
-                        {
-                            eprintln!("Error removing role: {:?}", e);
+                                )
+                                    .await
+                            {
+                                eprintln!("Error removing role: {:?}", e);
+                            }
                         }
                     }
                 }
