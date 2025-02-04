@@ -50,7 +50,7 @@ impl Task for StatusUpdateCheck {
     }
 
     fn run_in(&self) -> Duration {
-        time_until(9, 0)
+        time_until(00, 40)
     }
 
     async fn run(&self, ctx: Context) {
