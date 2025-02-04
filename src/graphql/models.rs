@@ -16,28 +16,24 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 use serde::Deserialize;
-use std::borrow::Cow;
 
-#[derive(Deserialize)]
-pub struct Member<'a> {
-    id: Option<i32>,
-    roll_num: Option<Cow<'a, str>>,
-    name: Option<Cow<'a, str>>,
-    hostel: &'a str,
-    email: &'a str,
-    sex: &'a str,
-    year: i32,
-    mac_addr: &'a str,
-    discord_id: &'a str,
-    group_id: i32,
+#[derive(Clone, Debug, Deserialize)]
+pub struct Streak {
+    #[serde(rename = "currentStreak")]
+    pub current_streak: i32,
+    #[serde(rename = "maxStreak")]
+    pub max_streak: i32,
 }
 
-#[derive(Deserialize)]
-struct Data<'a> {
-    getMember: Vec<Member<'a>>,
-}
-
-#[derive(Deserialize)]
-struct Root<'a> {
-    data: Data<'a>,
+#[derive(Clone, Debug, Deserialize)]
+pub struct Member {
+    #[serde(rename = "memberId")]
+    pub member_id: i32,
+    pub name: String,
+    #[serde(rename = "discordId")]
+    pub discord_id: String,
+    #[serde(rename = "groupId")]
+    pub group_id: u32,
+    #[serde(default)]
+    pub streak: Vec<Streak>,
 }
