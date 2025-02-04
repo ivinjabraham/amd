@@ -15,37 +15,139 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-use serde_json::Value;
+use crate::graphql::models::{Member, Streak};
+use anyhow::Context;
 
-use super::models::Member;
+pub async fn fetch_members() -> Result<Vec<Member>, anyhow::Error> {
+    let request_url = std::env::var("ROOT_URL").expect("ROOT_URL not found");
 
-const REQUEST_URL: &str = "https://root.shuttleapp.rs/";
-
-pub async fn fetch_members() -> Result<Vec<String>, reqwest::Error> {
     let client = reqwest::Client::new();
     let query = r#"
-    query {
-        getMember {
-            name,
-            groupId,
+        { 
+          members {
+            memberId
+            name
             discordId
+            groupId
+            streak {
+              currentStreak
+              maxStreak
+            }
         }
     }"#;
 
     let response = client
-        .post(REQUEST_URL)
+        .post(request_url)
         .json(&serde_json::json!({"query": query}))
         .send()
-        .await?;
+        .await
+        .context("Failed to successfully post request")?;
 
-    let json: Value = response.json().await?;
+    let response_json: serde_json::Value = response
+        .json()
+        .await
+        .context("Failed to serialize response")?;
 
-    let member_names: Vec<String> = json["data"]["getMember"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(Member)
-        .collect();
+    let members = response_json
+        .get("data")
+        .and_then(|data| data.get("members"))
+        .and_then(|members| members.as_array())
+        .ok_or_else(|| anyhow::anyhow!("Malformed response: 'members' field missing or invalid"))?;
 
-    Ok(member_names)
+    let members: Vec<Member> = serde_json::from_value(serde_json::Value::Array(members.clone()))
+        .context("Failed to parse 'members' into Vec<Member>")?;
+
+    Ok(members)
+}
+
+pub async fn increment_streak(member: &mut Member) -> anyhow::Result<()> {
+    let request_url = std::env::var("ROOT_URL").context("ROOT_URL was not found")?;
+
+    let client = reqwest::Client::new();
+    let mutation = format!(
+        r#"
+        mutation {{
+            incrementStreak(input: {{ memberId: {} }}) {{
+                currentStreak
+            }}
+        }}"#,
+        member.member_id
+    );
+    let response = client
+        .post(request_url)
+        .json(&serde_json::json!({"query": mutation}))
+        .send()
+        .await
+        .context("Root Request failed")?;
+
+    // Handle the streak vector
+    if member.streak.is_empty() {
+        // If the streak vector is empty, add a new Streak object with both values set to 1
+        member.streak.push(Streak {
+            current_streak: 1,
+            max_streak: 1,
+        });
+    } else {
+        // Otherwise, increment the current_streak for each Streak and update max_streak if necessary
+        for streak in &mut member.streak {
+            streak.current_streak += 1;
+            if streak.current_streak > streak.max_streak {
+                streak.max_streak = streak.current_streak;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn reset_streak(member: &mut Member) -> anyhow::Result<()> {
+    let request_url = std::env::var("ROOT_URL").context("ROOT_URL was not found")?;
+
+    let client = reqwest::Client::new();
+    let mutation = format!(
+        r#"
+        mutation {{
+            resetStreak(input: {{ memberId: {} }}) {{
+                currentStreak
+                maxStreak
+            }}
+        }}"#,
+        member.member_id
+    );
+
+    let response = client
+        .post(&request_url)
+        .json(&serde_json::json!({ "query": mutation }))
+        .send()
+        .await
+        .context("Root Request failed")?;
+
+    let response_json: serde_json::Value = response
+        .json()
+        .await
+        .context("Failed to parse response JSON")?;
+    if let Some(data) = response_json
+        .get("data")
+        .and_then(|data| data.get("resetStreak"))
+    {
+        let current_streak = data.get("currentStreak").and_then(|v| v.as_i64()).unwrap();
+
+        let max_streak = data.get("maxStreak").and_then(|v| v.as_i64()).unwrap();
+
+        // Update the member's streak vector
+        if member.streak.is_empty() {
+            // If the streak vector is empty, initialize it with the returned values
+            member.streak.push(Streak {
+                current_streak: current_streak as i32,
+                max_streak: max_streak as i32,
+            });
+        } else {
+            // Otherwise, update the first streak entry
+            for streak in &mut member.streak {
+                streak.current_streak = current_streak as i32;
+                streak.max_streak = max_streak as i32;
+            }
+        }
+    }
+    Ok(())
 }
