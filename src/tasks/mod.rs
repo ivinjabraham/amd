@@ -51,7 +51,7 @@ impl Task for StatusUpdateCheck {
     }
 
     fn run_in(&self) -> Duration {
-        time_until(05, 40)
+        time_until(5, 00)
     }
 
     async fn run(&self, ctx: Context) -> anyhow::Result<()> {
