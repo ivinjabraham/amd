@@ -44,7 +44,10 @@ pub async fn fetch_members() -> anyhow::Result<Vec<Member>> {
         .context("Failed to successfully post request")?;
 
     if !response.status().is_success() {
-        return Err(anyhow!("Server responded with an error: {:?}", response.status()));
+        return Err(anyhow!(
+            "Server responded with an error: {:?}",
+            response.status()
+        ));
     }
 
     let response_json: serde_json::Value = response
@@ -56,7 +59,12 @@ pub async fn fetch_members() -> anyhow::Result<Vec<Member>> {
         .get("data")
         .and_then(|data| data.get("members"))
         .and_then(|members| members.as_array())
-        .ok_or_else(|| anyhow::anyhow!("Malformed response: Could not access Members from {}", response_json))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Malformed response: Could not access Members from {}",
+                response_json
+            )
+        })?;
 
     let members: Vec<Member> = serde_json::from_value(serde_json::Value::Array(members.clone()))
         .context("Failed to parse 'members' into Vec<Member>")?;
@@ -86,7 +94,10 @@ pub async fn increment_streak(member: &mut Member) -> anyhow::Result<()> {
         .context("Failed to succesfully post query to Root")?;
 
     if !response.status().is_success() {
-        return Err(anyhow!("Server responded with an error: {:?}", response.status()));
+        return Err(anyhow!(
+            "Server responded with an error: {:?}",
+            response.status()
+        ));
     }
 
     // Handle the streak vector
@@ -132,7 +143,10 @@ pub async fn reset_streak(member: &mut Member) -> anyhow::Result<()> {
         .context("Failed to succesfully post query to Root")?;
 
     if !response.status().is_success() {
-        return Err(anyhow!("Server responded with an error: {:?}", response.status()));
+        return Err(anyhow!(
+            "Server responded with an error: {:?}",
+            response.status()
+        ));
     }
 
     let response_json: serde_json::Value = response
@@ -144,8 +158,14 @@ pub async fn reset_streak(member: &mut Member) -> anyhow::Result<()> {
         .get("data")
         .and_then(|data| data.get("resetStreak"))
     {
-        let current_streak = data.get("currentStreak").and_then(|v| v.as_i64()).ok_or_else(|| anyhow!("current_streak was parsed as None"))? as i32;
-        let max_streak = data.get("maxStreak").and_then(|v| v.as_i64()).ok_or_else(|| anyhow!("max_streak was parsed as None"))? as i32;
+        let current_streak =
+            data.get("currentStreak")
+                .and_then(|v| v.as_i64())
+                .ok_or_else(|| anyhow!("current_streak was parsed as None"))? as i32;
+        let max_streak =
+            data.get("maxStreak")
+                .and_then(|v| v.as_i64())
+                .ok_or_else(|| anyhow!("max_streak was parsed as None"))? as i32;
 
         // Update the member's streak vector
         if member.streak.is_empty() {

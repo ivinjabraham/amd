@@ -19,10 +19,10 @@ mod status_update;
 
 use crate::{tasks::status_update::check_status_updates, utils::time::time_until};
 
+use anyhow::Result;
 use async_trait::async_trait;
 use serenity::client::Context;
 use tokio::time::Duration;
-use anyhow::Result;
 
 /// A [`Task`] is any job that needs to be executed on a regular basis.
 /// A task has a function [`Task::run_in`] that returns the time till the

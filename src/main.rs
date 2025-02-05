@@ -97,7 +97,8 @@ pub fn initialize_data() -> Data {
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     dotenv::dotenv().ok();
-    let discord_token = std::env::var("DISCORD_TOKEN").context("DISCORD_TOKEN was not found in the ENV")?;
+    let discord_token =
+        std::env::var("DISCORD_TOKEN").context("DISCORD_TOKEN was not found in the ENV")?;
 
     let framework = Framework::builder()
         .options(FrameworkOptions {
@@ -131,7 +132,10 @@ async fn main() -> Result<(), Error> {
     .await
     .context("Failed to create the Serenity client")?;
 
-    client.start().await.context("Failed to start the Serenity client")?;
+    client
+        .start()
+        .await
+        .context("Failed to start the Serenity client")?;
 
     Ok(())
 }
@@ -161,21 +165,33 @@ async fn handle_reaction(ctx: &SerenityContext, reaction: &Reaction, data: &Data
     if !is_relevant_reaction(reaction.message_id, &reaction.emoji, data) {
         return;
     }
-    
+
     // TODO Log these errors
-    let Some(guild_id) = reaction.guild_id else { return };
-    let Some(user_id) = reaction.user_id else { return };
-    let Ok(member) = guild_id.member(ctx, user_id).await else { return };
-    let Some(role_id) = data.reaction_roles.get(&reaction.emoji) else { return };
-    
+    let Some(guild_id) = reaction.guild_id else {
+        return;
+    };
+    let Some(user_id) = reaction.user_id else {
+        return;
+    };
+    let Ok(member) = guild_id.member(ctx, user_id).await else {
+        return;
+    };
+    let Some(role_id) = data.reaction_roles.get(&reaction.emoji) else {
+        return;
+    };
+
     let result = if is_add {
         member.add_role(&ctx.http, *role_id).await
     } else {
         member.remove_role(&ctx.http, *role_id).await
     };
-    
+
     if let Err(e) = result {
-        eprintln!("Error {} role: {:?}", if is_add { "adding" } else { "removing" }, e);
+        eprintln!(
+            "Error {} role: {:?}",
+            if is_add { "adding" } else { "removing" },
+            e
+        );
     }
 }
 
