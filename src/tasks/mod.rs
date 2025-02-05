@@ -19,6 +19,7 @@ mod status_update;
 
 use crate::{tasks::status_update::check_status_updates, utils::time::time_until};
 
+use anyhow::Result;
 use async_trait::async_trait;
 use serenity::client::Context;
 use tokio::time::Duration;
@@ -31,7 +32,7 @@ use tokio::time::Duration;
 pub trait Task: Send + Sync {
     fn name(&self) -> &'static str;
     fn run_in(&self) -> Duration;
-    async fn run(&self, ctx: Context);
+    async fn run(&self, ctx: Context) -> Result<()>;
 }
 
 /// Analogous to [`crate::commands::get_commands`], every task that is defined
@@ -50,10 +51,10 @@ impl Task for StatusUpdateCheck {
     }
 
     fn run_in(&self) -> Duration {
-        time_until(00, 40)
+        time_until(5, 00)
     }
 
-    async fn run(&self, ctx: Context) {
-        check_status_updates(ctx).await;
+    async fn run(&self, ctx: Context) -> anyhow::Result<()> {
+        check_status_updates(ctx).await
     }
 }

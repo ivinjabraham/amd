@@ -23,9 +23,7 @@ async fn amdctl(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-/// Every function that is defined *should* be added to the
-/// returned vector in get_commands to ensure it is registered (available for the user)
-/// when the bot goes online.
+/// Returns a vector containg [Poise Commands][`poise::Command`]
 pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
     vec![amdctl()]
 }

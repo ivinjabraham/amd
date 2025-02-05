@@ -15,30 +15,34 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
+use anyhow::Result;
 use serenity::all::{
     self, ChannelId, Context, CreateEmbed, CreateEmbedAuthor, CreateMessage, Embed,
     Member as DiscordMember, Message, MessageId, Timestamp,
 };
 
 use crate::{
-    graphql::{queries::{fetch_members, increment_streak, reset_streak}, models:: Member},
+    graphql::{
+        models::Member,
+        queries::{fetch_members, increment_streak, reset_streak},
+    },
     ids::{
         GROUP_FOUR_CHANNEL_ID, GROUP_ONE_CHANNEL_ID, GROUP_THREE_CHANNEL_ID, GROUP_TWO_CHANNEL_ID,
         STATUS_UPDATE_CHANNEL_ID,
     },
-    utils::time::get_five_am_timestamp,
 };
 use std::fs::File;
 use std::{collections::HashMap, io::Write, str::FromStr};
 
+use chrono::{Local, Timelike};
 use chrono_tz::Asia;
 
-pub async fn check_status_updates(ctx: Context) {
+pub async fn check_status_updates(ctx: Context) -> Result<()> {
     let mut members = match fetch_members().await {
         Ok(members) => members,
         Err(e) => {
             eprintln!("Failed to fetch members from Root. {}", e);
-            return;
+            return Err(e);
         }
     };
 
@@ -60,6 +64,8 @@ pub async fn check_status_updates(ctx: Context) {
         Err(e) => eprintln!("{}", e),
         _ => (),
     };
+
+    Ok(())
 }
 
 async fn send_and_save_limiting_messages(channel_ids: &Vec<ChannelId>, ctx: &Context) {
@@ -88,7 +94,12 @@ async fn collect_updates(channel_ids: &Vec<ChannelId>, ctx: &Context) -> Vec<Mes
     let message_ids = get_msg_ids();
 
     let time = chrono::Local::now().with_timezone(&chrono_tz::Asia::Kolkata);
-    let today_five_am = get_five_am_timestamp(time);
+    let today_five_am = time
+        .with_hour(5)
+        .and_then(|t| t.with_minute(0))
+        .and_then(|t| t.with_second(0))
+        .expect("Valid datetime must be created");
+
     let yesterday_five_pm = today_five_am - chrono::Duration::hours(12);
 
     for (&channel_id, &msg_id) in channel_ids.iter().zip(message_ids.iter()) {
