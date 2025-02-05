@@ -33,7 +33,7 @@ use std::collections::HashMap;
 use anyhow::Context as _;
 use poise::{Context as PoiseContext, Framework, FrameworkOptions, PrefixFrameworkOptions};
 use serenity::{
-    all::{ReactionType, RoleId},
+    all::{Reaction, ReactionType, RoleId},
     client::{Context as SerenityContext, FullEvent},
     model::{gateway::GatewayIntents, id::MessageId},
 };
@@ -136,7 +136,7 @@ async fn main() -> Result<(), Error> {
     Ok(())
 }
 
-/// Handles various events from Discord, such as sending messages or adding reactions to messages.
+/// Handles various events from Discord, such as reactions.
 async fn event_handler(
     ctx: &SerenityContext,
     event: &FullEvent,
@@ -145,63 +145,38 @@ async fn event_handler(
 ) -> Result<(), Error> {
     match event {
         FullEvent::ReactionAdd { add_reaction } => {
-            if is_relevant_reaction(add_reaction.message_id, &add_reaction.emoji, data) {
-                // This check for a guild_id isn't strictly necessary, since we're already checking
-                // if the reaction was added to the [`ROLES_MESSAGE_ID`] which *should* point to a
-                // message in the server.
-                if let Some(guild_id) = add_reaction.guild_id {
-                    if let Some(user_id) = add_reaction.user_id {
-                        if let Ok(member) = guild_id.member(ctx, user_id).await {
-                            if let Err(e) = member
-                                .add_role(
-                                    &ctx.http,
-                                    data.reaction_roles
-                                    .get(&add_reaction.emoji)
-                                    .expect("Hard coded value verified earlier."),
-                                )
-                                    .await
-                            {
-                                // TODO: Replace with tracing
-                                eprintln!("Error adding role: {:?}", e);
-                            }
-                        }
-                    }
-                }
-            }
+            handle_reaction(ctx, add_reaction, data, true).await;
         }
-
         FullEvent::ReactionRemove { removed_reaction } => {
-            if is_relevant_reaction(removed_reaction.message_id, &removed_reaction.emoji, data) {
-                // This check for a guild_id isn't strictly necessary, since we're already checking
-                // if the reaction was added to the [`ROLES_MESSAGE_ID`] which *should* point to a
-                // message in the server.
-                if let Some(guild_id) = removed_reaction.guild_id {
-                    if let Some(user_id) = removed_reaction.user_id {
-                        if let Ok(member) = guild_id
-                            .member(ctx, user_id)
-                                .await
-                        {
-                            if let Err(e) = member
-                                .remove_role(
-                                    &ctx.http,
-                                    *data.reaction_roles
-                                    .get(&removed_reaction.emoji)
-                                    .expect("Hard coded value verified earlier."),
-                                )
-                                    .await
-                            {
-                                eprintln!("Error removing role: {:?}", e);
-                            }
-                        }
-                    }
-                }
-            }
+            handle_reaction(ctx, removed_reaction, data, false).await;
         }
-
         _ => {}
     }
 
     Ok(())
+}
+
+/// Handles adding or removing roles based on reactions.
+async fn handle_reaction(ctx: &SerenityContext, reaction: &Reaction, data: &Data, is_add: bool) {
+    if !is_relevant_reaction(reaction.message_id, &reaction.emoji, data) {
+        return;
+    }
+    
+    // TODO Log these errors
+    let Some(guild_id) = reaction.guild_id else { return };
+    let Some(user_id) = reaction.user_id else { return };
+    let Ok(member) = guild_id.member(ctx, user_id).await else { return };
+    let Some(role_id) = data.reaction_roles.get(&reaction.emoji) else { return };
+    
+    let result = if is_add {
+        member.add_role(&ctx.http, *role_id).await
+    } else {
+        member.remove_role(&ctx.http, *role_id).await
+    };
+    
+    if let Err(e) = result {
+        eprintln!("Error {} role: {:?}", if is_add { "adding" } else { "removing" }, e);
+    }
 }
 
 /// Helper function to check if a reaction was made to [`ids::ROLES_MESSAGE_ID`] and if [`Data::reaction_roles`] contains a relevant (emoji, role) pair.
