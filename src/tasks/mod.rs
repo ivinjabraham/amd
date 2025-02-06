@@ -30,7 +30,6 @@ use tokio::time::Duration;
 /// in the future to display to the end user.
 #[async_trait]
 pub trait Task: Send + Sync {
-    fn name(&self) -> &'static str;
     fn run_in(&self) -> Duration;
     async fn run(&self, ctx: Context) -> Result<()>;
 }
@@ -46,10 +45,6 @@ pub struct StatusUpdateCheck;
 
 #[async_trait]
 impl Task for StatusUpdateCheck {
-    fn name(&self) -> &'static str {
-        "StatusUpdateCheck"
-    }
-
     fn run_in(&self) -> Duration {
         time_until(5, 00)
     }
