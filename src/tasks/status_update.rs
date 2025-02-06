@@ -126,28 +126,31 @@ async fn collect_updates(channel_ids: &[ChannelId], ctx: &Context) -> anyhow::Re
     let mut valid_updates: Vec<Message> = vec![];
     let message_ids = get_msg_ids()?;
     let now = chrono::Local::now().with_timezone(&chrono_tz::Asia::Kolkata);
-    let today_five_am =  chrono::Local.with_ymd_and_hms(now.year(), now.month(), now.day(), 5, 0, 0).earliest().expect("Failed to create 5 AM timestamp");
+    let today_five_am = chrono::Local
+        .with_ymd_and_hms(now.year(), now.month(), now.day(), 5, 0, 0)
+        .earliest()
+        .expect("Failed to create 5 AM timestamp");
     let yesterday_five_pm = today_five_am - chrono::Duration::hours(12);
     for (&channel_id, &msg_id) in channel_ids.iter().zip(message_ids.iter()) {
         let messages = channel_id
             .messages(
                 &ctx.http,
-                serenity::builder::GetMessages::new().after(msg_id).limit(100),
+                serenity::builder::GetMessages::new()
+                    .after(msg_id)
+                    .limit(100),
             )
             .await
             .with_context(|| anyhow!("Failed to get messages from channel {}", channel_id))?;
 
-        valid_updates.extend(
-            messages.into_iter().filter(|msg| {
-                let content = msg.content.to_lowercase();
-                (content.contains("namah shivaya")
-                 && content.contains("regards")
-                 && msg.timestamp >= yesterday_five_pm.into())
-                    || (content.contains("regards")
-                        && msg.author.name == "amanoslean"
-                        && msg.timestamp >= yesterday_five_pm.into())
-            })
-        );
+        valid_updates.extend(messages.into_iter().filter(|msg| {
+            let content = msg.content.to_lowercase();
+            (content.contains("namah shivaya")
+                && content.contains("regards")
+                && msg.timestamp >= yesterday_five_pm.into())
+                || (content.contains("regards")
+                    && msg.author.name == "amanoslean"
+                    && msg.timestamp >= yesterday_five_pm.into())
+        }));
     }
 
     Ok(valid_updates)
