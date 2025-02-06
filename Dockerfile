@@ -16,5 +16,7 @@ RUN cargo build --release
 
 # Release Stage
 FROM debian:bullseye-slim AS release
+RUN apt-get update
+RUN apt install -y ca-certificates
 COPY --from=builder /builder/target/release/amd /usr/local/bin
 CMD ["/usr/local/bin/amd"]
