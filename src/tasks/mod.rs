@@ -17,11 +17,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 mod status_update;
 
-use crate::{tasks::status_update::check_status_updates, utils::time::time_until};
-
 use anyhow::Result;
 use async_trait::async_trait;
 use serenity::client::Context;
+use status_update::StatusUpdateCheck;
 use tokio::time::Duration;
 
 /// A [`Task`] is any job that needs to be executed on a regular basis.
@@ -38,18 +37,4 @@ pub trait Task: Send + Sync {
 /// must be included in the returned vector in order for it to be scheduled.
 pub fn get_tasks() -> Vec<Box<dyn Task>> {
     vec![Box::new(StatusUpdateCheck)]
-}
-
-/// Checks for status updates daily at 9 AM.
-pub struct StatusUpdateCheck;
-
-#[async_trait]
-impl Task for StatusUpdateCheck {
-    fn run_in(&self) -> Duration {
-        time_until(5, 00)
-    }
-
-    async fn run(&self, ctx: Context) -> anyhow::Result<()> {
-        check_status_updates(ctx).await
-    }
 }
