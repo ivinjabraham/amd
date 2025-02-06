@@ -15,8 +15,8 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-use chrono::{DateTime, Datelike, Local, NaiveDateTime, TimeZone};
-use chrono_tz::{Asia::Kolkata, Tz};
+use chrono::{Datelike, Local, TimeZone};
+use chrono_tz::Asia::Kolkata;
 use std::time::Duration;
 
 pub fn time_until(hour: u32, minute: u32) -> Duration {
