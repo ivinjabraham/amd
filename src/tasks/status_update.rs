@@ -100,10 +100,7 @@ async fn send_and_save_limiting_messages(
     Ok(())
 }
 
-async fn collect_updates(
-    channel_ids: &Vec<ChannelId>,
-    ctx: &Context,
-) -> anyhow::Result<Vec<Message>> {
+async fn collect_updates(channel_ids: &[ChannelId], ctx: &Context) -> anyhow::Result<Vec<Message>> {
     let mut valid_updates: Vec<Message> = vec![];
     let message_ids = match get_msg_ids() {
         Ok(msg_ids) => msg_ids,
@@ -226,7 +223,7 @@ async fn generate_embed(
         .url(AUTHOR_URL)
         .icon_url(ICON_URL);
 
-    let mut description = format!("# Leaderboard Updates\n");
+    let mut description = "# Leaderboard Updates\n".to_string();
 
     if all_time_high_members.len() > 5 {
         description.push_str(&format!(
