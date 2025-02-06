@@ -15,54 +15,88 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
+use anyhow::{anyhow, Context as _};
+use chrono::{Datelike, TimeZone};
+use chrono_tz::Asia;
 use serenity::all::{
-    self, ChannelId, Context, CreateEmbed, CreateEmbedAuthor, CreateMessage, Embed,
-    Member as DiscordMember, Message, MessageId, Timestamp,
+    ChannelId, Context, CreateEmbed, CreateEmbedAuthor, CreateMessage, Message, MessageId,
+    Timestamp,
 };
+use serenity::async_trait;
 
+use std::io::Write;
+use std::{collections::HashSet, fs::File};
+
+use super::Task;
+use crate::utils::time::time_until;
 use crate::{
-    graphql::{queries::{fetch_members, increment_streak, reset_streak}, models:: Member},
+    graphql::{
+        models::Member,
+        queries::{fetch_members, increment_streak, reset_streak},
+    },
     ids::{
         GROUP_FOUR_CHANNEL_ID, GROUP_ONE_CHANNEL_ID, GROUP_THREE_CHANNEL_ID, GROUP_TWO_CHANNEL_ID,
         STATUS_UPDATE_CHANNEL_ID,
     },
-    utils::time::get_five_am_timestamp,
 };
-use std::fs::File;
-use std::{collections::HashMap, io::Write, str::FromStr};
 
-use chrono_tz::Asia;
+const TITLE_URL: &str = "https://www.youtube.com/watch?v=epnuvyNj0FM";
+const IMAGE_URL: &str = "https://media1.tenor.com/m/zAHCPvoyjNIAAAAd/yay-kitty.gif";
+const AUTHOR_URL: &str = "https://github.com/amfoss/amd";
+const ICON_URL: &str = "https://cdn.discordapp.com/avatars/1245352445736128696/da3c6f833b688f5afa875c9df5d86f91.webp?size=160";
 
-pub async fn check_status_updates(ctx: Context) {
-    let mut members = match fetch_members().await {
-        Ok(members) => members,
-        Err(e) => {
-            eprintln!("Failed to fetch members from Root. {}", e);
-            return;
-        }
-    };
+/// Checks for status updates daily at 9 AM.
+pub struct StatusUpdateCheck;
 
-    let channel_ids: Vec<ChannelId> = vec![
+#[async_trait]
+impl Task for StatusUpdateCheck {
+    fn run_in(&self) -> tokio::time::Duration {
+        time_until(5, 00)
+    }
+
+    async fn run(&self, ctx: Context) -> anyhow::Result<()> {
+        check_status_updates(ctx).await
+    }
+}
+
+pub async fn check_status_updates(ctx: Context) -> anyhow::Result<()> {
+    let members = fetch_members()
+        .await
+        .context("Failed to fetch members from Root.")?;
+    let channel_ids = get_channel_ids().context("Failed to get channel IDs")?;
+    let messages: Vec<Message> = collect_updates(&channel_ids, &ctx)
+        .await
+        .context("Failed to collect updates")?;
+    send_and_save_limiting_messages(&channel_ids, &ctx)
+        .await
+        .context("Failed to send and save limiting messages")?;
+    let embed = generate_embed(members, messages)
+        .await
+        .context("Failed to generate embed")?;
+    let msg = CreateMessage::new().embed(embed);
+    let status_update_channel = ChannelId::new(STATUS_UPDATE_CHANNEL_ID);
+    status_update_channel
+        .send_message(ctx.http, msg)
+        .await
+        .context("Failed to send status update report")?;
+
+    Ok(())
+}
+
+// TOOD: Get IDs through ENV instead
+fn get_channel_ids() -> anyhow::Result<Vec<ChannelId>> {
+    Ok(vec![
         ChannelId::new(GROUP_ONE_CHANNEL_ID),
         ChannelId::new(GROUP_TWO_CHANNEL_ID),
         ChannelId::new(GROUP_THREE_CHANNEL_ID),
         ChannelId::new(GROUP_FOUR_CHANNEL_ID),
-    ];
-
-    let messages: Vec<Message> = collect_updates(&channel_ids, &ctx).await;
-    send_and_save_limiting_messages(&channel_ids, &ctx).await;
-
-    let embed = generate_embed(members, messages, &ctx).await;
-
-    let msg = CreateMessage::new().embed(embed);
-    let status_update_channel = ChannelId::new(STATUS_UPDATE_CHANNEL_ID);
-    match status_update_channel.send_message(ctx.http, msg).await {
-        Err(e) => eprintln!("{}", e),
-        _ => (),
-    };
+    ])
 }
 
-async fn send_and_save_limiting_messages(channel_ids: &Vec<ChannelId>, ctx: &Context) {
+async fn send_and_save_limiting_messages(
+    channel_ids: &Vec<ChannelId>,
+    ctx: &Context,
+) -> anyhow::Result<()> {
     let mut msg_ids: Vec<MessageId> = vec![];
     for channel_id in channel_ids {
         let msg = channel_id
@@ -71,59 +105,62 @@ async fn send_and_save_limiting_messages(channel_ids: &Vec<ChannelId>, ctx: &Con
                 "Collecting messages for status update report. Please do not delete this message.",
             )
             .await
-            .unwrap();
+            .with_context(|| {
+                anyhow::anyhow!("Failed to send limiting message in channel {}", channel_id)
+            })?;
+
         msg_ids.push(msg.id);
     }
     let file_name =
-        std::env::var("CONFIG_FILE_NAME").expect("Configuration file name must be present");
-    let mut file = File::create(file_name).unwrap(); // Create or overwrite the file
+        std::env::var("CONFIG_FILE_NAME").context("Config. file name was not found in the ENV")?;
+    let mut file = File::create(file_name).context("Failed to create Config. file handler")?;
 
     for msg_id in msg_ids {
-        writeln!(file, "{}", msg_id).unwrap(); // Write each message ID to a new line
+        writeln!(file, "{}", msg_id).context("Failed to write to Config. file")?;
     }
+
+    Ok(())
 }
 
-async fn collect_updates(channel_ids: &Vec<ChannelId>, ctx: &Context) -> Vec<Message> {
+async fn collect_updates(channel_ids: &[ChannelId], ctx: &Context) -> anyhow::Result<Vec<Message>> {
     let mut valid_updates: Vec<Message> = vec![];
-    let message_ids = get_msg_ids();
-
-    let time = chrono::Local::now().with_timezone(&chrono_tz::Asia::Kolkata);
-    let today_five_am = get_five_am_timestamp(time);
+    let message_ids = get_msg_ids()?;
+    let now = chrono::Local::now().with_timezone(&chrono_tz::Asia::Kolkata);
+    let today_five_am = chrono::Local
+        .with_ymd_and_hms(now.year(), now.month(), now.day(), 5, 0, 0)
+        .earliest()
+        .expect("Failed to create 5 AM timestamp");
     let yesterday_five_pm = today_five_am - chrono::Duration::hours(12);
-
     for (&channel_id, &msg_id) in channel_ids.iter().zip(message_ids.iter()) {
-        let builder = serenity::builder::GetMessages::new().after(msg_id);
-        match channel_id.messages(&ctx.http, builder).await {
-            Ok(messages) => {
-                for msg in &messages {
-                    println!("{:?}", msg);
-                }
-                let filtered_messages: Vec<Message> = messages
-                    .into_iter()
-                    .filter(|msg| {
-                        let msg_content = msg.content.to_lowercase();
-                        (msg_content.contains("namah shivaya")
-                            && msg_content.contains("regards")
-                            && msg.timestamp >= yesterday_five_pm.into())
-                            || (msg_content.contains("regards")
-                                && msg.author.name == "amanoslean"
-                                && msg.timestamp >= yesterday_five_pm.into())
-                    })
-                    .collect();
+        let messages = channel_id
+            .messages(
+                &ctx.http,
+                serenity::builder::GetMessages::new()
+                    .after(msg_id)
+                    .limit(100),
+            )
+            .await
+            .with_context(|| anyhow!("Failed to get messages from channel {}", channel_id))?;
 
-                valid_updates.extend(filtered_messages);
-            }
-            Err(e) => println!("ERROR: {:?}", e),
-        }
+        valid_updates.extend(messages.into_iter().filter(|msg| {
+            let content = msg.content.to_lowercase();
+            (content.contains("namah shivaya")
+                && content.contains("regards")
+                && msg.timestamp >= yesterday_five_pm.into())
+                || (content.contains("regards")
+                    && msg.author.name == "amanoslean"
+                    && msg.timestamp >= yesterday_five_pm.into())
+        }));
     }
 
-    valid_updates
+    Ok(valid_updates)
 }
 
-fn get_msg_ids() -> Vec<MessageId> {
+fn get_msg_ids() -> anyhow::Result<Vec<MessageId>> {
     let file_name =
-        std::env::var("CONFIG_FILE_NAME").expect("Configuration file name must be present");
-    let content = std::fs::read_to_string(file_name).unwrap();
+        std::env::var("CONFIG_FILE_NAME").context("Configuration file name must be present")?;
+    let content =
+        std::fs::read_to_string(file_name).context("Failed to read config. file for msg ids")?;
 
     let msg_ids = content
         .lines()
@@ -131,43 +168,38 @@ fn get_msg_ids() -> Vec<MessageId> {
         .map(|e| MessageId::new(e))
         .collect();
 
-    msg_ids
+    Ok(msg_ids)
 }
 
 async fn generate_embed(
     members: Vec<Member>,
     messages: Vec<Message>,
-    ctx: &Context,
-) -> CreateEmbed {
-    let mut naughty_list: Vec<Member> = vec![];
+) -> anyhow::Result<CreateEmbed> {
+    let mut naughty_list: Vec<Member> = Vec::new();
     let mut highest_streak = 0;
     let mut all_time_high = 0;
-    let mut all_time_high_members: Vec<Member> = vec![];
-    let mut highest_streak_members: Vec<Member> = vec![];
+    let mut all_time_high_members: Vec<Member> = Vec::new();
+    let mut highest_streak_members: Vec<Member> = Vec::new();
     let mut record_breakers: Vec<Member> = vec![];
 
-    for mut member in members {
-        if member.name == "Pakhi Banchalia" {
-            continue;
-        }
+    let message_authors: HashSet<String> =
+        messages.iter().map(|m| m.author.id.to_string()).collect();
 
-        let mut has_sent_update = false;
-        for msg in &messages {
-            if msg.author.id.to_string() == member.discord_id {
-                has_sent_update = true;
-                break;
-            }
-        }
+    for mut member in members.into_iter().filter(|m| m.name != "Pakhi Banchalia") {
+        let has_sent_update = message_authors.contains(&member.discord_id);
 
         if has_sent_update {
-            increment_streak(&mut member).await;
+            increment_streak(&mut member)
+                .await
+                .context("Failed to increment streak")?;
             let current_streak = member.streak[0].current_streak;
+            let max_streak = member.streak[0].max_streak;
+
             if current_streak >= highest_streak {
                 highest_streak = current_streak;
                 highest_streak_members.push(member.clone());
             }
 
-            let max_streak = member.streak[0].max_streak;
             if current_streak == max_streak {
                 record_breakers.push(member.clone())
             }
@@ -177,82 +209,103 @@ async fn generate_embed(
                 all_time_high_members.push(member.clone())
             }
         } else {
-            println!("reset for {:?}", member.name);
-            reset_streak(&mut member).await;
+            reset_streak(&mut member)
+                .await
+                .context("Failed to reset streak")?;
             naughty_list.push(member.clone());
         }
     }
 
-    let author = CreateEmbedAuthor::new("amD")
-        .url("https://github.com/amfoss/amd")
-        .icon_url("https://cdn.discordapp.com/avatars/1245352445736128696/da3c6f833b688f5afa875c9df5d86f91.webp?size=160");
-
-    let mut description = format!("# Leaderboard Updates\n");
-
-    if all_time_high_members.len() > 5 {
-        description.push_str(&format!(
-            "## All Time High - {}\nMore than five members hold the all time high record!\n",
-            all_time_high
-        ));
-    } else {
-        description.push_str(&format!("## All Time High - {}\n", all_time_high));
-        for member in all_time_high_members {
-            description.push_str(&format!("- {}\n", member.name));
-        }
-    }
-
-    if highest_streak_members.len() > 5 {
-        description.push_str(&format!("## Current Highest Streak - {}\nMore than five members hold have the current highest streak!\n", highest_streak));
-    } else {
-        description.push_str(&format!("## Current Highest Streak - {}\n", highest_streak));
-        for member in highest_streak_members {
-            description.push_str(&format!("- {}\n", member.name));
-        }
-    }
-
-    if !record_breakers.is_empty() {
-        description.push_str("## New Personal Records\n");
-        for member in record_breakers {
-            description.push_str(&format!(
-                "- {} - {}\n",
-                member.name, member.streak[0].current_streak
-            ))
-        }
-    }
-
+    let description = build_description(
+        highest_streak,
+        all_time_high,
+        &highest_streak_members,
+        &all_time_high_members,
+        &record_breakers,
+        &naughty_list,
+    );
     let today = chrono::Local::now()
         .with_timezone(&Asia::Kolkata)
         .date_naive();
 
-    if naughty_list.is_empty() {
-        description.push_str("# Missed Updates\nEveryone sent their update yesterday!\n");
-        return CreateEmbed::default()
-            .title(format!("Status Update Report - {}", today))
-            .url("https://www.youtube.com/watch?v=epnuvyNj0FM")
-            .description(description)
-            .image("https://media1.tenor.com/m/zAHCPvoyjNIAAAAd/yay-kitty.gif")
-            .color(serenity::all::Colour::new(0xeab308))
-            .timestamp(Timestamp::now())
-            .author(author);
-    }
-
-    description.push_str("# Missed Updates\n");
-    for member in naughty_list {
-        println!("{:?}", member.name);
-        if member.streak[0].current_streak == 0 {
-            description.push_str(&format!("- {} | :x:\n", member.name));
-        } else if member.streak[0].current_streak == -1 {
-            description.push_str(&format!("- {} | :x::x:\n", member.name));
-        } else if member.streak[0].current_streak <= -2 {
-            description.push_str(&format!("- {} | :headstone:\n", member.name));
-        }
-    }
-
-    CreateEmbed::default()
+    let mut embed = CreateEmbed::default()
         .title(format!("Status Update Report - {}", today))
-        .url("https://www.youtube.com/watch?v=epnuvyNj0FM")
+        .url(TITLE_URL)
         .description(description)
         .color(serenity::all::Colour::new(0xeab308))
         .timestamp(Timestamp::now())
-        .author(author)
+        .author(
+            CreateEmbedAuthor::new("amD")
+                .url(AUTHOR_URL)
+                .icon_url(ICON_URL),
+        );
+
+    if naughty_list.is_empty() {
+        embed = embed.image(IMAGE_URL);
+    }
+
+    Ok(embed)
+}
+
+fn build_description(
+    highest_streak: i32,
+    all_time_high: i32,
+    highest_streak_members: &[Member],
+    all_time_high_members: &[Member],
+    record_breakers: &[Member],
+    naughty_list: &[Member],
+) -> String {
+    let mut desc = String::from("# Leaderboard Updates\n");
+
+    desc.push_str(&format_section(
+        "All Time High",
+        all_time_high,
+        all_time_high_members,
+    ));
+    desc.push_str(&format_section(
+        "Current Highest Streak",
+        highest_streak,
+        highest_streak_members,
+    ));
+
+    if !record_breakers.is_empty() {
+        desc.push_str("## New Personal Records\n");
+        for member in record_breakers {
+            desc.push_str(&format!(
+                "- {} - {}\n",
+                member.name, member.streak[0].current_streak
+            ));
+        }
+    }
+
+    if naughty_list.is_empty() {
+        desc.push_str("# Missed Updates\nEveryone sent their update yesterday!\n");
+    } else {
+        desc.push_str("# Missed Updates\n");
+        for member in naughty_list {
+            let status = match member.streak[0].current_streak {
+                0 => ":x:",
+                -1 => ":x::x:",
+                _ => ":headstone:",
+            };
+            desc.push_str(&format!("- {} | {}\n", member.name, status));
+        }
+    }
+
+    desc
+}
+
+fn format_section(title: &str, value: i32, members: &[Member]) -> String {
+    if members.len() > 5 {
+        format!(
+            "## {} - {}\nMore than five members hold the record!\n",
+            title, value
+        )
+    } else {
+        let mut section = format!("## {} - {}\n", title, value);
+        for member in members {
+            section.push_str(&format!("- {}\n", member.name));
+        }
+        section
+    }
 }

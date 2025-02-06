@@ -15,13 +15,16 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-use chrono::{DateTime, Datelike, Local, TimeZone};
-use chrono_tz::Tz;
-use tokio::time::Duration;
+use chrono::{Datelike, Local, TimeZone};
+use chrono_tz::Asia::Kolkata;
+use std::time::Duration;
 
 pub fn time_until(hour: u32, minute: u32) -> Duration {
-    let now = chrono::Local::now().with_timezone(&chrono_tz::Asia::Kolkata);
-    let today_run = now.date().and_hms(hour, minute, 0);
+    let now = Local::now().with_timezone(&Kolkata);
+    let today_run = Kolkata
+        .with_ymd_and_hms(now.year(), now.month(), now.day(), hour, minute, 0)
+        .single()
+        .expect("Valid datetime must be created");
 
     let next_run = if now < today_run {
         today_run
@@ -29,13 +32,6 @@ pub fn time_until(hour: u32, minute: u32) -> Duration {
         today_run + chrono::Duration::days(1)
     };
 
-    let time_until = (next_run - now).to_std().unwrap();
-    Duration::from_secs(time_until.as_secs())
-}
-
-pub fn get_five_am_timestamp(now: DateTime<Tz>) -> DateTime<Local> {
-    chrono::Local
-        .ymd(now.year(), now.month(), now.day())
-        .and_hms_opt(5, 0, 0)
-        .expect("Chrono must work.")
+    let duration = next_run.signed_duration_since(now);
+    Duration::from_secs(duration.num_seconds().max(0) as u64)
 }

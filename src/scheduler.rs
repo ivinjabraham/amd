@@ -20,11 +20,7 @@ use serenity::client::Context as SerenityContext;
 
 use tokio::spawn;
 
-/// Spawns a thread for each [`Task`].
-///
-/// [`SerenityContext`] is passed along with it so that they can
-/// call any required Serenity functions without creating a new [`serenity::http`]
-/// interface with a Discord token.
+/// Spawns a sleepy thread for each [`Task`].
 pub async fn run_scheduler(ctx: SerenityContext) {
     let tasks = get_tasks();
 
@@ -39,6 +35,8 @@ async fn schedule_task(ctx: SerenityContext, task: Box<dyn Task>) {
         let next_run_in = task.run_in();
         tokio::time::sleep(next_run_in).await;
 
-        task.run(ctx.clone()).await;
+        if let Err(e) = task.run(ctx.clone()).await {
+            eprint!("Error running task: {}", e);
+        }
     }
 }
