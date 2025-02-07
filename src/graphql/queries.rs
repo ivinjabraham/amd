@@ -15,8 +15,10 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-use crate::graphql::models::{Member, Streak};
 use anyhow::{anyhow, Context};
+use tracing::debug;
+
+use crate::graphql::models::{Member, Streak};
 
 pub async fn fetch_members() -> anyhow::Result<Vec<Member>> {
     let request_url = std::env::var("ROOT_URL").context("ROOT_URL not found in ENV")?;
@@ -35,6 +37,7 @@ pub async fn fetch_members() -> anyhow::Result<Vec<Member>> {
         }
     }"#;
 
+    debug!("Sending query {}", query);
     let response = client
         .post(request_url)
         .json(&serde_json::json!({"query": query}))
@@ -54,6 +57,7 @@ pub async fn fetch_members() -> anyhow::Result<Vec<Member>> {
         .await
         .context("Failed to serialize response")?;
 
+    debug!("Response: {}", response_json);
     let members = response_json
         .get("data")
         .and_then(|data| data.get("members"))
@@ -85,6 +89,7 @@ pub async fn increment_streak(member: &mut Member) -> anyhow::Result<()> {
         member.member_id
     );
 
+    debug!("Sending mutation {}", mutation);
     let response = client
         .post(request_url)
         .json(&serde_json::json!({"query": mutation}))
@@ -98,6 +103,7 @@ pub async fn increment_streak(member: &mut Member) -> anyhow::Result<()> {
             response.status()
         ));
     }
+    debug!("Response: {:?}", response.text().await);
 
     // Handle the streak vector
     if member.streak.is_empty() {
@@ -134,6 +140,7 @@ pub async fn reset_streak(member: &mut Member) -> anyhow::Result<()> {
         member.member_id
     );
 
+    debug!("Sending mutation {}", mutation);
     let response = client
         .post(&request_url)
         .json(&serde_json::json!({ "query": mutation }))
@@ -152,6 +159,7 @@ pub async fn reset_streak(member: &mut Member) -> anyhow::Result<()> {
         .json()
         .await
         .context("Failed to parse response JSON")?;
+    debug!("Response: {}", response_json);
 
     if let Some(data) = response_json
         .get("data")

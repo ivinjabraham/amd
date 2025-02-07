@@ -29,6 +29,7 @@ use tokio::time::Duration;
 /// in the future to display to the end user.
 #[async_trait]
 pub trait Task: Send + Sync {
+    fn name(&self) -> &str;
     fn run_in(&self) -> Duration;
     async fn run(&self, ctx: Context) -> Result<()>;
 }

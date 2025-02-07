@@ -23,6 +23,7 @@ use serenity::all::{
     Timestamp,
 };
 use serenity::async_trait;
+use tracing::{debug, trace};
 
 use std::io::Write;
 use std::{collections::HashSet, fs::File};
@@ -50,6 +51,10 @@ pub struct StatusUpdateCheck;
 
 #[async_trait]
 impl Task for StatusUpdateCheck {
+    fn name(&self) -> &str {
+        "Status Update Check"
+    }
+
     fn run_in(&self) -> tokio::time::Duration {
         time_until(5, 00)
     }
@@ -60,21 +65,26 @@ impl Task for StatusUpdateCheck {
 }
 
 pub async fn check_status_updates(ctx: Context) -> anyhow::Result<()> {
+    trace!("Starting check_status_updates");
     let members = fetch_members()
         .await
         .context("Failed to fetch members from Root.")?;
+    debug!("Members fetched from root: {:?}", members);
     let channel_ids = get_channel_ids().context("Failed to get channel IDs")?;
-    let messages: Vec<Message> = collect_updates(&channel_ids, &ctx)
+    debug!("channel_ids: {:?}", channel_ids);
+    let updates: Vec<Message> = collect_updates(&channel_ids, &ctx)
         .await
         .context("Failed to collect updates")?;
+    debug!("Updates collected: {:?}", updates);
     send_and_save_limiting_messages(&channel_ids, &ctx)
         .await
         .context("Failed to send and save limiting messages")?;
-    let embed = generate_embed(members, messages)
+    let embed = generate_embed(members, updates)
         .await
         .context("Failed to generate embed")?;
     let msg = CreateMessage::new().embed(embed);
     let status_update_channel = ChannelId::new(STATUS_UPDATE_CHANNEL_ID);
+    debug!("Sending report...");
     status_update_channel
         .send_message(ctx.http, msg)
         .await
@@ -85,6 +95,7 @@ pub async fn check_status_updates(ctx: Context) -> anyhow::Result<()> {
 
 // TOOD: Get IDs through ENV instead
 fn get_channel_ids() -> anyhow::Result<Vec<ChannelId>> {
+    trace!("Getting channel ids...");
     Ok(vec![
         ChannelId::new(GROUP_ONE_CHANNEL_ID),
         ChannelId::new(GROUP_TWO_CHANNEL_ID),
@@ -97,8 +108,10 @@ async fn send_and_save_limiting_messages(
     channel_ids: &Vec<ChannelId>,
     ctx: &Context,
 ) -> anyhow::Result<()> {
+    trace!("Running send_and_save_limiting_messages()");
     let mut msg_ids: Vec<MessageId> = vec![];
     for channel_id in channel_ids {
+        debug!("Sending message in {}", channel_id);
         let msg = channel_id
             .say(
                 &ctx.http,
@@ -109,6 +122,7 @@ async fn send_and_save_limiting_messages(
                 anyhow::anyhow!("Failed to send limiting message in channel {}", channel_id)
             })?;
 
+        debug!("Message ID: {}", msg.id);
         msg_ids.push(msg.id);
     }
     let file_name =
@@ -123,6 +137,7 @@ async fn send_and_save_limiting_messages(
 }
 
 async fn collect_updates(channel_ids: &[ChannelId], ctx: &Context) -> anyhow::Result<Vec<Message>> {
+    trace!("Collecting updates");
     let mut valid_updates: Vec<Message> = vec![];
     let message_ids = get_msg_ids()?;
     let now = chrono::Local::now().with_timezone(&chrono_tz::Asia::Kolkata);
@@ -142,6 +157,7 @@ async fn collect_updates(channel_ids: &[ChannelId], ctx: &Context) -> anyhow::Re
             .await
             .with_context(|| anyhow!("Failed to get messages from channel {}", channel_id))?;
 
+        debug!("Messages: {:?}", messages);
         valid_updates.extend(messages.into_iter().filter(|msg| {
             let content = msg.content.to_lowercase();
             (content.contains("namah shivaya")
@@ -153,6 +169,7 @@ async fn collect_updates(channel_ids: &[ChannelId], ctx: &Context) -> anyhow::Re
         }));
     }
 
+    debug!("Valid updates: {:?}", valid_updates);
     Ok(valid_updates)
 }
 
@@ -168,6 +185,7 @@ fn get_msg_ids() -> anyhow::Result<Vec<MessageId>> {
         .map(|e| MessageId::new(e))
         .collect();
 
+    debug!("msg_ids: {:?}", msg_ids);
     Ok(msg_ids)
 }
 
@@ -175,6 +193,7 @@ async fn generate_embed(
     members: Vec<Member>,
     messages: Vec<Message>,
 ) -> anyhow::Result<CreateEmbed> {
+    trace!("Running generate_embed");
     let mut naughty_list: Vec<Member> = Vec::new();
     let mut highest_streak = 0;
     let mut all_time_high = 0;
@@ -184,8 +203,10 @@ async fn generate_embed(
 
     let message_authors: HashSet<String> =
         messages.iter().map(|m| m.author.id.to_string()).collect();
+    debug!("Message authors: {:?}", message_authors);
 
     for mut member in members.into_iter().filter(|m| m.name != "Pakhi Banchalia") {
+        debug!("Processing member: {:?}", member);
         let has_sent_update = message_authors.contains(&member.discord_id);
 
         if has_sent_update {
@@ -196,19 +217,23 @@ async fn generate_embed(
             let max_streak = member.streak[0].max_streak;
 
             if current_streak >= highest_streak {
+                debug!("Pushing to highest_streak: {:?}", member);
                 highest_streak = current_streak;
                 highest_streak_members.push(member.clone());
             }
 
             if current_streak == max_streak {
+                debug!("Pushing to record_breakers: {:?}", member);
                 record_breakers.push(member.clone())
             }
 
             if max_streak >= all_time_high {
+                debug!("Pushing to all_time_high_members: {:?}", member);
                 all_time_high = max_streak;
                 all_time_high_members.push(member.clone())
             }
         } else {
+            debug!("Pushing to naughty_list: {:?}", member);
             reset_streak(&mut member)
                 .await
                 .context("Failed to reset streak")?;
@@ -255,6 +280,7 @@ fn build_description(
     record_breakers: &[Member],
     naughty_list: &[Member],
 ) -> String {
+    trace!("Running build_description");
     let mut desc = String::from("# Leaderboard Updates\n");
 
     desc.push_str(&format_section(
@@ -292,6 +318,7 @@ fn build_description(
         }
     }
 
+    debug!("Description: {}", desc);
     desc
 }
 
